@@ -195,26 +195,30 @@ class ExperimentRunner:
                 if turn >= (self.config.STAGE2 + self.config.BUFFER*2):
                     return True
             
-            # Player's turn
             if flag == 0:
                 keys = event.getKeys()
                 if 'space' in keys:
-                    # Record player tap time
                     self.player_tap.append(self.clock.getTime())
-                    
-                    # Play sound for player tap
                     self.sound_player.play()
                     
-                    # Calculate synchronization error
-                    se = self.stim_tap[turn] - (self.player_tap[turn] + self.player_tap[turn-1])/2
-                    self.stim_se.append(se)
+                    # タップ時系列の安全な同期エラー計算
+                    if turn > 0 and turn < len(self.stim_tap):
+                        se = self.stim_tap[turn] - np.mean([
+                            self.player_tap[turn], 
+                            self.player_tap[turn-1]
+                        ])
+                        self.stim_se.append(se)
+                        
+                        # デバッグ出力
+                        print(f"Turn {turn}: SE = {se}")
+                        print(f"Stim tap: {self.stim_tap[turn]}")
+                        print(f"Player taps: {self.player_tap[turn-1]}, {self.player_tap[turn]}")
                     
-                    # Use model to predict next timing
                     random_second = self.model.inference(se)
                     
-                    # Reset timer and switch to stimulus turn
                     self.timer.reset()
                     flag = 1
+                    turn += 1
                 
                 if 'escape' in keys:
                     self.win.close()
