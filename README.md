@@ -91,7 +91,7 @@ Note that analysis scripts work with processed data (Stage 2 data with buffer re
 
 1. Clone the repository / リポジトリのクローン:
 ```bash
-git clone https://github.com/yourusername/cooperative-tapping.git
+git clone https://github.com/nagyuk/cooperative-tapping.git
 cd cooperative-tapping
 ```
 
