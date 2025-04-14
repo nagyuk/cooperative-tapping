@@ -98,13 +98,30 @@ Available options:
 - `--input-dir`: Custom input directory
 - `--output-dir`: Custom output directory for visualizations
 
+## Data Collection and Structure
+
+### Experiment Phases
+The experiment consists of two phases:
+1. **Stage 1 (Metronome Phase)**: Fixed-interval taps to establish rhythm (typically 10 taps)
+2. **Stage 2 (Interaction Phase)**: Alternating taps between computer and human (typically 100 taps)
+
+### Data Files
+Each experiment generates several CSV files with a timestamp-based ID:
+- `[model]_[timestamp]_tap_full.csv`: Complete raw tap data from both Stage 1 and Stage 2
+- `[model]_[timestamp]_tap.csv`: Processed tap data (only Stage 2, buffer removed)
+- `[model]_[timestamp]_SE.csv`: Synchronization Error data
+- `[model]_[timestamp]_ITI.csv`: Inter Tap-onset Interval data
+- `[model]_[timestamp]_variations.csv`: Variations of SE and ITI
+- `[model]_[timestamp]_hypo.csv`: Hypothesis data (Bayesian models only)
+
+### Data Interpretation
+- **Synchronization Error (SE)**: The difference between a player's tap and the midpoint of the surrounding stimulus taps
+- **Inter Tap-onset Interval (ITI)**: The time between consecutive taps
+- **Variations**: The differences between consecutive SE or ITI values
+
+Note that analysis scripts work with processed data (Stage 2 data with buffer removed). If you need to analyze the complete raw data including Stage 1, you should use the `*_tap_full.csv` files.
+
 ## Key Concepts
-
-### Synchronization Error (SE)
-The difference between a player's tap and the midpoint of the surrounding stimulus taps.
-
-### Inter Tap-onset Interval (ITI)
-The time between consecutive taps.
 
 ### Models
 

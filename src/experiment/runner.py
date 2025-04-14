@@ -57,9 +57,9 @@ class ExperimentRunner:
     
     def reset_data(self):
         """Reset experiment data."""
-        # Initialize tap time lists with initial values
-        self.stim_tap = [self.config.SPAN * self.config.STAGE1]
-        self.player_tap = [self.config.SPAN * (self.config.STAGE1 - 1/2)]
+        # Initialize empty tap time lists
+        self.stim_tap = []
+        self.player_tap = []
         
         # Initialize empty lists for derived measures
         self.stim_iti = []
@@ -73,6 +73,10 @@ class ExperimentRunner:
         
         # For Bayesian models, store hypothesis data
         self.hypo = []
+        
+        # Keep original full data for research purposes
+        self.full_stim_tap = []
+        self.full_player_tap = []
     
     def setup_ui(self):
         """Set up UI components for the experiment."""
@@ -119,8 +123,9 @@ class ExperimentRunner:
             self.win.flip()
             core.wait(1.0)
         
-        # Reset timer
+        # Reset timer and clock
         self.timer.reset()
+        self.clock.reset()
         
         # Display tapping instructions
         self.text.setText("Listen to the rhythm")
@@ -135,11 +140,22 @@ class ExperimentRunner:
             if self.timer.getTime() >= self.config.SPAN:
                 stage1_num += 1
                 self.sound_stim.play()
+                
+                # Record stimulus tap time
+                current_time = self.clock.getTime()
+                self.stim_tap.append(current_time)
+                self.full_stim_tap.append(current_time)
+                
                 self.timer.reset()
             
             # Check for key press
             keys = event.getKeys()
             if 'space' in keys:
+                # Record player tap time
+                current_time = self.clock.getTime()
+                self.player_tap.append(current_time)
+                self.full_player_tap.append(current_time)
+                
                 self.sound_player.play()
             
             if 'escape' in keys:
@@ -149,6 +165,13 @@ class ExperimentRunner:
             
             # Exit after STAGE1 sounds
             if stage1_num >= self.config.STAGE1:
+                # Ensure we have at least one player tap before starting Stage 2
+                if not self.player_tap:
+                    # Add a dummy player tap if none were recorded
+                    estimated_tap = self.stim_tap[-1] - self.config.SPAN/2
+                    self.player_tap.append(estimated_tap)
+                    self.full_player_tap.append(estimated_tap)
+                
                 # Prepare for Stage 2
                 random_second = np.random.normal(self.config.SPAN, self.config.SCALE)
                 return True
@@ -181,7 +204,9 @@ class ExperimentRunner:
             # Stimulus turn
             if self.timer.getTime() >= random_second and flag == 1:
                 self.sound_stim.play()
-                self.stim_tap.append(self.clock.getTime())
+                current_time = self.clock.getTime()
+                self.stim_tap.append(current_time)
+                self.full_stim_tap.append(current_time)
                 
                 # If using Bayesian models, store hypothesis data
                 if hasattr(self.model, 'get_hypothesis'):
@@ -198,27 +223,26 @@ class ExperimentRunner:
             if flag == 0:
                 keys = event.getKeys()
                 if 'space' in keys:
-                    self.player_tap.append(self.clock.getTime())
+                    current_time = self.clock.getTime()
+                    self.player_tap.append(current_time)
+                    self.full_player_tap.append(current_time)
                     self.sound_player.play()
                     
                     # タップ時系列の安全な同期エラー計算
-                    if turn > 0 and turn < len(self.stim_tap):
-                        se = self.stim_tap[turn] - np.mean([
-                            self.player_tap[turn], 
-                            self.player_tap[turn-1]
-                        ])
+                    if len(self.player_tap) >= 2 and len(self.stim_tap) > 0:
+                        # 最後の刺激タップと直近2回のプレイヤータップを使用
+                        se = self.stim_tap[-1] - (self.player_tap[-1] + self.player_tap[-2])/2
                         self.stim_se.append(se)
-                        
-                        # デバッグ出力
-                        print(f"Turn {turn}: SE = {se}")
-                        print(f"Stim tap: {self.stim_tap[turn]}")
-                        print(f"Player taps: {self.player_tap[turn-1]}, {self.player_tap[turn]}")
+                    else:
+                        # 十分なデータがない場合は0を使用
+                        se = 0.0
+                        self.stim_se.append(se)
                     
+                    # モデルを使用して次のタイミングを推測
                     random_second = self.model.inference(se)
                     
                     self.timer.reset()
                     flag = 1
-                    turn += 1
                 
                 if 'escape' in keys:
                     self.win.close()
@@ -307,7 +331,14 @@ class ExperimentRunner:
         # Create base filename
         base_filename = f"{self.model_type.lower()}_{self.serial_num}"
         
-        # Save tap times
+        # Save full tap times (Stage 1 + Stage 2, no buffer removed)
+        full_tap_df = pd.DataFrame({
+            'Stim_tap': self.full_stim_tap,
+            'Player_tap': self.full_player_tap
+        })
+        full_tap_df.to_csv(f"{self.output_dir}/{base_filename}_tap_full.csv", index=False)
+        
+        # Save processed tap times (Stage 2 only, buffer removed)
         tap_df = pd.DataFrame({
             'Stim_tap': self.stim_tap,
             'Player_tap': self.player_tap
