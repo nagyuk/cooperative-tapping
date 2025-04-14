@@ -171,7 +171,7 @@ Extends the Bayesian model with an "inverse" component that allows hypothesis mo
 ## Research Background / 研究背景
 
 This software is an implementation of cooperative tapping experiments as described in the paper "Analysis of Cooperative Tapping Tasks Using Extended Bayesian Inference Algorithm" by Yuki Nagai and Kazuto Sasai. The research explores timing control mechanisms in human communication, with a particular focus on developing models that can represent non-stationary states.  
-このソフトウェアは、長井勇樹と笹井一人による論文「拡張ベイズ推論アルゴリズムを用いた協調タッピング課題の分析」に記述されている協調タッピング実験の実装です。この研究は、人間のコミュニケーションにおけるタイミング制御メカニズムを探求し、特に非定常状態を表現できるモデルの開発に焦点を当てています。
+このソフトウェアは、永井友貴と笹井一人による論文「拡張ベイズ推論アルゴリズムを用いた協調タッピング課題の分析」に記述されている協調タッピング実験の実装です。この研究は、人間のコミュニケーションにおけるタイミング制御メカニズムを探求し、特に非定常状態を表現できるモデルの開発に焦点を当てています。
 
 ## License / ライセンス
 
