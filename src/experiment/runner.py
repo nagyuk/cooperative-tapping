@@ -6,6 +6,17 @@ import os
 import datetime
 import numpy as np
 import pandas as pd
+
+# PsychoPyのオーディオ設定を先に行う
+from psychopy import prefs
+# サウンドバックエンドの優先順位を設定（利用可能なもので最適なものを使用）
+prefs.hardware['audioLib'] = ['pygame', 'ptb', 'sounddevice', 'pyo']
+# 音声バッファサイズを大きくして安定性を向上
+prefs.hardware['audioBufferSize'] = 512
+# 音声レイテンシーを許容
+prefs.hardware['audioLatencyMode'] = 3
+
+# その他のpsychopyモジュールをインポート
 from psychopy import visual, core, event, sound
 
 from ..models import SEAModel, BayesModel, BIBModel
@@ -57,9 +68,9 @@ class ExperimentRunner:
     
     def reset_data(self):
         """Reset experiment data."""
-        # Initialize empty tap time lists
-        self.stim_tap = []
-        self.player_tap = []
+        # Initialize tap time lists with initial values
+        self.stim_tap = [self.config.SPAN * self.config.STAGE1]
+        self.player_tap = [self.config.SPAN * (self.config.STAGE1 - 1/2)]
         
         # Initialize empty lists for derived measures
         self.stim_iti = []
@@ -80,17 +91,42 @@ class ExperimentRunner:
     
     def setup_ui(self):
         """Set up UI components for the experiment."""
-        # Create window
+        # Create window with optimized settings for stable timing
         self.win = visual.Window(
             size=(800, 600), 
             monitor="testMonitor",
             color="black",
-            fullscr=False
+            fullscr=False,
+            winType='pyglet',
+            allowGUI=True,
+            waitBlanking=False  # VSyncを無効化して安定したタイミングを確保
         )
         
-        # Set up sounds
-        self.sound_stim = sound.Sound(self.config.SOUND_STIM)
-        self.sound_player = sound.Sound(self.config.SOUND_PLAYER)
+        
+        # Set up sounds with debug info
+        print(f"INFO: 音声ファイルパス - 刺激音: {self.config.SOUND_STIM}")
+        print(f"INFO: 音声ファイルパス - プレーヤー音: {self.config.SOUND_PLAYER}")
+        
+        # WAVファイルが存在するか確認
+        if not os.path.exists(self.config.SOUND_STIM):
+            print(f"警告: 刺激音ファイルが見つかりません: {self.config.SOUND_STIM}")
+        if not os.path.exists(self.config.SOUND_PLAYER):
+            print(f"警告: プレーヤー音ファイルが見つかりません: {self.config.SOUND_PLAYER}")
+            
+        # 音声バックエンドの情報を表示
+        if hasattr(sound, 'audioLib'):
+            print(f"INFO: 使用中の音声バックエンド: {sound.audioLib}")
+        else:
+            print("INFO: 音声バックエンド情報が取得できません")
+        
+        # 明示的にWAVファイルを指定して音声オブジェクトを作成
+        try:
+            # 絶対パスを使用してWAVファイルを直接指定
+            self.sound_stim = sound.Sound(str(self.config.SOUND_STIM))
+            self.sound_player = sound.Sound(str(self.config.SOUND_PLAYER))
+            print("INFO: 音声オブジェクト作成成功")
+        except Exception as e:
+            print(f"エラー: 音声オブジェクト作成中に問題が発生しました: {e}")
         
         # Set up text
         self.text = visual.TextStim(
@@ -139,7 +175,18 @@ class ExperimentRunner:
             # Play sound at fixed interval
             if self.timer.getTime() >= self.config.SPAN:
                 stage1_num += 1
+                # 音声の状態をチェック
+                if hasattr(self.sound_stim, 'status') and self.sound_stim.status == 1:
+                    # 既に再生中の場合は止めてから再生
+                    self.sound_stim.stop()
+                    # 完全に停止するまで少し待機
+                    core.wait(0.02)
+                    
+                # 音声再生と完了を待機
                 self.sound_stim.play()
+                
+                # より長い待機時間で安定性向上（再生が完了するのを待つ）
+                core.wait(0.1)
                 
                 # Record stimulus tap time
                 current_time = self.clock.getTime()
@@ -156,7 +203,18 @@ class ExperimentRunner:
                 self.player_tap.append(current_time)
                 self.full_player_tap.append(current_time)
                 
+                # 音声の状態をチェック
+                if hasattr(self.sound_player, 'status') and self.sound_player.status == 1:
+                    # 既に再生中の場合は止めてから再生
+                    self.sound_player.stop()
+                    # 完全に停止するまで少し待機
+                    core.wait(0.02)
+                    
+                # 音声再生と完了を待機
                 self.sound_player.play()
+                
+                # より長い待機時間で安定性向上（再生が完了するのを待つ）
+                core.wait(0.1)
             
             if 'escape' in keys:
                 self.win.close()
@@ -172,8 +230,12 @@ class ExperimentRunner:
                     self.player_tap.append(estimated_tap)
                     self.full_player_tap.append(estimated_tap)
                 
-                # Prepare for Stage 2
-                random_second = np.random.normal(self.config.SPAN, self.config.SCALE)
+                # 最後のタップ時刻を記録して次のタイミングを正確に計算するため
+                self.last_stim_tap_time = self.stim_tap[-1]
+                
+                # ステージ2のタップ回数をテスト用に30回に設定
+                self.config.STAGE2 = 30
+                
                 return True
     
     def run_stage2(self):
@@ -181,19 +243,31 @@ class ExperimentRunner:
         flag = 1  # 0: Player's turn, 1: Stimulus turn
         turn = 0
         
-        # Display instructions
-        self.text.setText("Stage 2: Alternating taps\nFollow the rhythm")
+        # ステージ間の連続性を保つため、待機時間を削除し、テキストのみ更新
+        # テキストを小さく表示してリズムの妨げにならないようにする
+        self.text.setText("Stage 2: Alternating")
+        self.text.setHeight(0.03)  # テキストサイズを小さく
+        self.text.setPos([0, 0.8])  # 画面上部に表示
         self.text.draw()
         self.win.flip()
-        core.wait(2.0)
         
-        # Reset timers for Stage 2
-        self.timer.reset()
-        self.clock.reset()
-        random_second = np.random.normal(self.config.SPAN, self.config.SCALE)
+        # タイマーのリセットを行わず、run_stage1からの時間的連続性を保つ
+        # 最後のタップからの時間を計算して最適なタイミングを設定
+        elapsed_since_last_tap = self.clock.getTime() - self.last_stim_tap_time
+        # 次のタップが最適なタイミングになるよう計算
+        next_tap_due = self.config.SPAN - elapsed_since_last_tap
+        
+        # 次のタップまでの時間が短すぎる場合は安全マージンを追加
+        if next_tap_due < 0.3:
+            next_tap_due = 0.3  # 最低でも300ms待機
+        
+        # 元のランダム性を維持（base0.pyなどと同一）
+        random_second = next_tap_due + np.random.normal(0, self.config.SCALE)
         
         # Start message
-        self.text.setText("Tap when you hear the sound")
+        self.text.setText("Follow the rhythm")
+        self.text.setHeight(0.03)  # 小さめのテキスト
+        self.text.setPos([0, 0.7])  # 画面上部寄りに配置
         
         # Event loop for Stage 2
         while True:
@@ -203,7 +277,19 @@ class ExperimentRunner:
             
             # Stimulus turn
             if self.timer.getTime() >= random_second and flag == 1:
+                # 音声の状態をチェック
+                if hasattr(self.sound_stim, 'status') and self.sound_stim.status == 1:
+                    # 既に再生中の場合は止めてから再生
+                    self.sound_stim.stop()
+                    # 完全に停止するまで少し待機
+                    core.wait(0.02)
+                    
+                # 音声再生と完了を待機
                 self.sound_stim.play()
+                
+                # より長い待機時間で安定性向上（再生が完了するのを待つ）
+                core.wait(0.1)
+                
                 current_time = self.clock.getTime()
                 self.stim_tap.append(current_time)
                 self.full_stim_tap.append(current_time)
@@ -226,7 +312,18 @@ class ExperimentRunner:
                     current_time = self.clock.getTime()
                     self.player_tap.append(current_time)
                     self.full_player_tap.append(current_time)
+                    # 音声の状態をチェック
+                    if hasattr(self.sound_player, 'status') and self.sound_player.status == 1:
+                        # 既に再生中の場合は止めてから再生
+                        self.sound_player.stop()
+                        # 完全に停止するまで少し待機
+                        core.wait(0.02)
+                        
+                    # 音声再生と完了を待機
                     self.sound_player.play()
+                    
+                    # より長い待機時間で安定性向上（再生が完了するのを待つ）
+                    core.wait(0.1)
                     
                     # タップ時系列の安全な同期エラー計算
                     if len(self.player_tap) >= 2 and len(self.stim_tap) > 0:
