@@ -3,11 +3,11 @@
 # WAVファイルを使用する実装に対応しています
 
 # ファイルの存在確認
-if [ ! -f "assets/sounds/button02a.wav" ] || [ ! -f "assets/sounds/button03a.wav" ]; then
+if [ ! -f "assets/sounds/stim_beat.wav" ] || [ ! -f "assets/sounds/player_beat.wav" ]; then
     echo "エラー: 必要なWAVファイルが見つかりません"
     echo "以下のファイルが必要です："
-    echo "  - assets/sounds/button02a.wav"
-    echo "  - assets/sounds/button03a.wav"
+    echo "  - assets/sounds/stim_beat.wav"
+    echo "  - assets/sounds/player_beat.wav"
     exit 1
 fi
 
