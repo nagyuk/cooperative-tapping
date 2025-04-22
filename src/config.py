@@ -24,9 +24,9 @@ class Config:
         self.RAW_DATA_DIR = os.path.join(self.DATA_DIR, 'raw')
         self.PROCESSED_DATA_DIR = os.path.join(self.DATA_DIR, 'processed')
         
-        # Sound file paths
-        self.SOUND_STIM = os.path.join(self.SOUND_DIR, 'button02a.wav')
-        self.SOUND_PLAYER = os.path.join(self.SOUND_DIR, 'button03a.wav')
+        # Sound file paths - 実際に存在するWAVファイルを使用
+        self.SOUND_STIM = os.path.join(self.SOUND_DIR, 'stim_beat.wav')
+        self.SOUND_PLAYER = os.path.join(self.SOUND_DIR, 'player_beat.wav')
         
         # Model parameters
         self.BAYES_N_HYPOTHESIS = 20  # Number of hypotheses for Bayesian models

@@ -91,6 +91,9 @@ def main():
     # Use default output directory if not specified
     output_dir = args.output_dir if args.output_dir else config.RAW_DATA_DIR
     
+    # 実際のSTAGE2値を保存
+    actual_stage2 = 30
+    
     # Print experiment configuration
     print("\n" + "="*50)
     print(f"Starting experiment with {args.model.upper()} model")
@@ -99,10 +102,13 @@ def main():
     print(f"Output directory: {output_dir}")
     print(f"Base interval: {config.SPAN} seconds")
     print(f"Stage 1 taps: {config.STAGE1}")
-    print(f"Stage 2 taps: {config.STAGE2}")
+    print(f"Stage 2 taps: {actual_stage2}")  # 実際の値を表示
     print(f"Buffer: {config.BUFFER}")
     print(f"Scale: {config.SCALE}")
     print("="*50 + "\n")
+    
+    # 実際の値をconfigに設定
+    config.STAGE2 = actual_stage2
     
     # Wait for confirmation to start
     input("Press Enter to start the experiment...")
