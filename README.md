@@ -113,8 +113,8 @@ pip install -e .
 ```
 
 5. Make sure to place the required sound files in the assets/sounds directory / 必要な音声ファイルをassets/soundsディレクトリに配置してください:
-   - button02a.mp3 (stimulus sound / 刺激音)
-   - button03a.mp3 (player sound / プレイヤー音)
+   - stim_beat.wav (stimulus sound / 刺激音)
+   - playerbeat.wav (player sound / プレイヤー音)
 
 ## Usage / 使用方法
 
