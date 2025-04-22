@@ -1,1 +1,0 @@
-from pydub import AudioSegment; AudioSegment.from_mp3('assets/sounds/button02a.mp3').export('assets/sounds/button02a_new.wav', format='wav'); AudioSegment.from_mp3('assets/sounds/button03a.mp3').export('assets/sounds/button03a_new.wav', format='wav'); print('Conversion completed')
