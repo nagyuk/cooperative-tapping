@@ -1,8 +1,8 @@
 # Cooperative Tapping Task / 協調タッピング課題
 
-This project implements a cooperative tapping experiment system designed to study human-computer rhythmic interaction. It provides three different models of interaction.
+This project implements a **windowless** cooperative tapping experiment system designed to study human-computer rhythmic interaction with millisecond-precision timing. The system operates entirely through console interface, as participants perform the experiment with closed eyes (瞑目). It provides three different models of interaction.
 
-このプロジェクトは人間とコンピュータのリズム的相互作用を研究するための協調タッピング実験システムを実装しています。3種類の異なる相互作用モデルを提供します。
+このプロジェクトは、ミリ秒精度のタイミングで人間とコンピュータのリズム的相互作用を研究するための**ウィンドウレス**協調タッピング実験システムを実装しています。被験者が瞑目（目を閉じた状態）で実験を行うため、システムは完全にコンソールインターフェースで動作します。3種類の異なる相互作用モデルを提供します。
 
 1. **SEA (Synchronization Error Averaging) Model**: Adjusts timing based on averaged synchronization errors.  
    **SEA（同期エラー平均化）モデル**：同期エラーの平均に基づいてタイミングを調整します。

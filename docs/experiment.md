@@ -1,10 +1,10 @@
 # Experiment Documentation
 
-This document describes the cooperative tapping experiment implemented in this project.
+This document describes the **windowless** cooperative tapping experiment implemented in this project.
 
 ## Experiment Overview
 
-The cooperative tapping experiment is designed to study the rhythmic interaction between a human participant and a computer model. The experiment consists of two stages:
+The cooperative tapping experiment is designed to study the rhythmic interaction between a human participant and a computer model. This implementation operates entirely through console interface with PTB audio backend for millisecond-precision timing. Participants perform the experiment with closed eyes (瞑目) as required by the experimental protocol. The experiment consists of two stages:
 
 1. **Stage 1 (Metronome Stage)**: A fixed-interval metronome plays a series of beats to establish the rhythm.
 2. **Stage 2 (Interactive Stage)**: The participant and computer take turns tapping in an alternating pattern.
@@ -13,34 +13,41 @@ The cooperative tapping experiment is designed to study the rhythmic interaction
 
 ### Physical Setup
 
-- Computer with PsychoPy installed
-- Headphones for clear audio feedback
+- Computer with PsychoPy installed (using PTB audio backend)
+- High-quality headphones for clear audio feedback
 - Quiet environment to minimize distractions
+- High-precision keyboard (Realforce R3S recommended for low-latency input)
 
 ### Participant Instructions
 
 Participants are instructed to:
-1. Listen to the metronome beats in Stage 1
-2. Press the space bar in alternating turns with the computer in Stage 2
-3. Try to maintain a consistent rhythm throughout
+1. **Close their eyes (瞑目) throughout the experiment** - this is critical for the experimental protocol
+2. Listen to the metronome beats in Stage 1
+3. Press the space bar in alternating turns with the computer in Stage 2
+4. Try to maintain a consistent rhythm throughout
+5. Use only the right index finger for tapping
 
 ## Experiment Flow
 
-1. **Initialization**: The experiment begins with a welcome screen and instructions
+All interactions are through console output and keyboard input (no visual display):
+
+1. **Initialization**: The experiment begins with console instructions
 2. **Stage 1**: 
    - The system plays a series of metronome beats at a fixed interval (typically 2 seconds)
    - The participant is instructed to listen to establish the rhythm
    - Duration: 10 beats (configurable)
+   - Console displays progress information
 
 3. **Stage 2**:
    - The computer plays the first beat
-   - The participant responds by pressing the space bar
+   - The participant responds by pressing the space bar (with eyes closed)
    - The computer calculates the synchronization error
    - The computer uses this error to predict when to play the next beat
    - This alternating pattern continues
    - Duration: 100 alternating taps (configurable)
+   - Progress is reported via console every 10 taps
 
-4. **Completion**: The experiment ends with a thank-you screen
+4. **Completion**: The experiment ends with a console message
 
 ## Data Collection
 
