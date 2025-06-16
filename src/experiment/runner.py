@@ -7,34 +7,60 @@ import datetime
 import numpy as np
 import pandas as pd
 
-# PsychoPyのオーディオ設定を先に行う
+# PsychoPyのオーディオ設定を先に行う（ミリ秒精度の時間測定のため）
 from psychopy import prefs
-# サウンドバックエンドの優先順位を設定（様々なバックエンドを試行）
-prefs.hardware['audioLib'] = ['pygame', 'sounddevice', 'pyo', 'ptb']
-# 音声バッファサイズを小さくして高速応答を実現
-prefs.hardware['audioBufferSize'] = 512  # より安定性を重視
-# 低レイテンシーモードに設定（ミリ秒精度を確保）
-prefs.hardware['audioLatencyMode'] = 3  # より安定性を重視
+# PTBを最優先に設定（要件に従い、ミリ秒精度を確保）
+prefs.hardware['audioLib'] = ['ptb']  # PTBのみを使用してミリ秒精度を最大化
+# 音声バッファサイズを最小に設定（ミリ秒精度のため）
+prefs.hardware['audioBufferSize'] = 128  # PTBでの最高精度タイミング用
+# 低レイテンシーモードを最高精度に設定
+prefs.hardware['audioLatencyMode'] = 1  # 最高精度モード（ミリ秒精度を確保）
 
 # その他のpsychopyモジュールをインポート
 from psychopy import visual, core, event, sound
+
+# ガベージコレクションを最適化して実験中のメモリ使用を効率化
+import gc
+gc.disable()  # 実験中の自動GCを無効化してタイミングの乱れを防止
+
+# プロセス優先度を最大化して実験の時間精度を向上
+try:
+    import platform
+    if platform.system() == 'Windows':
+        # Windowsの場合
+        import ctypes
+        process_handle = ctypes.windll.kernel32.GetCurrentProcess()
+        ctypes.windll.kernel32.SetPriorityClass(process_handle, 0x00000080)  # HIGH_PRIORITY_CLASS
+        print("INFO: プロセス優先度を高に設定しました")
+    elif platform.system() == 'Darwin' or platform.system() == 'Linux':
+        # Mac/Linuxの場合
+        import os
+        try:
+            os.nice(-10)  # 優先度を上げる（管理者権限が必要な場合あり）
+            print("INFO: プロセス優先度を上げました")
+        except OSError:
+            print("INFO: プロセス優先度の変更が許可されていません（管理者権限が必要な場合があります）")
+except Exception as e:
+    print(f"INFO: プロセス優先度の設定に失敗しましたが続行します: {e}")
 
 from ..models import SEAModel, BayesModel, BIBModel
 
 class ExperimentRunner:
     """Runner for the cooperative tapping experiment."""
     
-    def __init__(self, config, model_type='sea', output_dir='data/raw'):
+    def __init__(self, config, model_type='sea', output_dir='data/raw', user_id='anonymous'):
         """Initialize experiment with configuration and model.
         
         Args:
             config: Configuration object
             model_type: Type of model to use ('sea', 'bayes', 'bib')
             output_dir: Directory to save output data
+            user_id: Subject/participant ID for data organization
         """
         self.config = config
         self.model_type = model_type
         self.output_dir = output_dir
+        self.user_id = user_id
         
         # 実験終了を管理するフラグ
         self.final_turn_reached = False
@@ -92,218 +118,314 @@ class ExperimentRunner:
         self.full_stim_tap = []
         self.full_player_tap = []
     
-    def setup_ui(self):
-        """Set up UI components for the experiment."""
-        # Create window with optimized settings for stable timing
-        self.win = visual.Window(
-            size=(800, 600), 
-            monitor="testMonitor",
-            color="black",
-            fullscr=False,
-            winType='pyglet',
-            allowGUI=True,
-            waitBlanking=False  # VSyncを無効化して安定したタイミングを確保
-        )
+    def setup_minimal_environment(self):
+        """実験に必要な最小限の環境を設定（瞑目実験用）"""
+        # 音声環境の設定
+        self._setup_audio()
         
-        
-        # Set up sounds with debug info
-        print(f"INFO: 音声ファイルパス - 刺激音: {self.config.SOUND_STIM}")
-        print(f"INFO: 音声ファイルパス - プレーヤー音: {self.config.SOUND_PLAYER}")
-        
-        # WAVファイルが存在するか確認
-        if not os.path.exists(self.config.SOUND_STIM):
-            print(f"警告: 刺激音ファイルが見つかりません: {self.config.SOUND_STIM}")
-        if not os.path.exists(self.config.SOUND_PLAYER):
-            print(f"警告: プレーヤー音ファイルが見つかりません: {self.config.SOUND_PLAYER}")
-            
-        # 音声バックエンドの情報を表示
-        if hasattr(sound, 'audioLib'):
-            print(f"INFO: 使用中の音声バックエンド: {sound.audioLib}")
-        else:
-            print("INFO: 音声バックエンド情報が取得できません")
-        
-        # 音声オブジェクトの作成（複数の方法を試行）
-        self.sound_stim = None
-        self.sound_player = None
-        
-        sound_creation_methods = [
-            # 方法1: 標準の初期化（backendパラメータなし）
-            lambda file_path: sound.Sound(file_path),
-            
-            # 方法2: 相対パスと標準初期化
-            lambda file_path: sound.Sound(os.path.basename(file_path)),
-            
-            # 方法3: 辞書による初期化
-            lambda file_path: sound.Sound(value=file_path),
-            
-            # 方法4: Numpy配列にする
-            lambda file_path: sound.Sound(value='C', secs=0.2),
-        ]
-        
-        # 音声ファイルの試行順序
-        sound_files = [
-            (self.config.SOUND_STIM, "刺激音"),
-            (self.config.SOUND_PLAYER, "プレーヤー音")
-        ]
-        
-        # 各方法を試す
-        for method_index, creation_method in enumerate(sound_creation_methods):
-            success = True
-            
-            try:
-                print(f"INFO: 方法{method_index+1}で音声オブジェクトの作成を試みます")
-                
-                for file_path, file_type in sound_files:
-                    try:
-                        if file_type == "刺激音":
-                            self.sound_stim = creation_method(file_path)
-                        else:
-                            self.sound_player = creation_method(file_path)
-                    except Exception as file_error:
-                        print(f"警告: {file_type}の作成に失敗: {file_error}")
-                        success = False
-                        break
-                
-                # 両方の音声が作成できたら成功
-                if success and self.sound_stim is not None and self.sound_player is not None:
-                    print(f"INFO: 方法{method_index+1}で音声オブジェクト作成成功")
-                    break
-                    
-            except Exception as method_error:
-                print(f"警告: 方法{method_index+1}が失敗: {method_error}")
-                continue
-        
-        # 音声オブジェクトの作成確認と代替方法
-        if self.sound_stim is None or self.sound_player is None:
-            print("警告: 音声ファイル（stim_beat.wav/player_beat.wav）での音声オブジェクト作成に失敗しました。トーン生成を使用します")
-            try:
-                # 純粋なトーン音を使用
-                self.sound_stim = sound.Sound(value='C', secs=0.1)
-                self.sound_player = sound.Sound(value='E', secs=0.1)
-                print("INFO: トーン音による音声オブジェクト作成成功")
-            except Exception as tone_error:
-                print(f"エラー: トーン音の作成にも失敗: {tone_error}")
-                # 音を使わないモード
-                print("警告: 音声なしでの実行を続行します")
-                self.sound_stim = None
-                self.sound_player = None
-        
-        # Set up text
-        self.text = visual.TextStim(
-            self.win,
-            text="Press SPACE to play rhythm",
-            color="white",
-            height=0.05
-        )
-        
-        # Set up clocks
+        # 最小限のクロック設定
         self.clock = core.Clock()  # For measuring tap times
         self.timer = core.Clock()  # For timing events
+        
+        # ウィンドウは作成しない
+        self.win = None
+        self.text = None
+        
+        print("INFO: 瞑目実験用の最小限環境を設定しました")
+    
+    def _setup_audio(self):
+        """最適な音声環境を設定"""
+        try:
+            # PTBを優先的に使用するよう設定
+            from psychopy import prefs
+            prefs.hardware['audioLib'] = ['ptb', 'pygame']  # PTB優先、代替あり
+            prefs.hardware['audioBufferSize'] = 512  # 安定性と精度のバランス
+            prefs.hardware['audioLatencyMode'] = 3  # 高精度だが実用的
+            print("INFO: 音声エンジン設定: PTBを優先的に使用します")
+            
+            # 音声ファイルのパスとファイルの存在確認
+            print(f"INFO: 音声ファイルパス - 刺激音: {self.config.SOUND_STIM}")
+            print(f"INFO: 音声ファイルパス - プレーヤー音: {self.config.SOUND_PLAYER}")
+            
+            if not os.path.exists(self.config.SOUND_STIM):
+                print(f"警告: 刺激音ファイルが見つかりません: {self.config.SOUND_STIM}")
+            if not os.path.exists(self.config.SOUND_PLAYER):
+                print(f"警告: プレーヤー音ファイルが見つかりません: {self.config.SOUND_PLAYER}")
+            
+            # 音声バックエンドの情報を表示
+            if hasattr(sound, 'audioLib'):
+                print(f"INFO: 使用中の音声バックエンド: {sound.audioLib}")
+            else:
+                print("INFO: 音声バックエンド情報が取得できません")
+            
+            # 音声オブジェクトの作成 - ステレオ高音量対応
+            try:
+                # PTBバックエンドでステレオ音声を最大音量で作成（音量を大幅に増幅）
+                self.sound_stim = sound.Sound(
+                    self.config.SOUND_STIM,
+                    sampleRate=44100,  # 標準的なサンプルレート
+                    stereo=True,       # ステレオを有効にして左右両方から音を出力
+                    hamming=False,     # レイテンシー低減
+                    volume=2.0         # 通常の2倍の音量に設定
+                )
+                self.sound_player = sound.Sound(
+                    self.config.SOUND_PLAYER,
+                    sampleRate=44100,
+                    stereo=True,       # ステレオを有効にして左右両方から音を出力
+                    hamming=False,
+                    volume=2.0         # 通常の2倍の音量に設定
+                )
+                
+                # 作成後に明示的に音量を最大+αに設定（PTBでより強く反映される）
+                try:
+                    # 超大音量設定（通常の2倍の音量に設定）
+                    self.sound_stim.setVolume(2.0)
+                    self.sound_player.setVolume(2.0)
+                    
+                    # さらにPTBバックエンド固有の音量ブースト（可能な場合）
+                    if hasattr(self.sound_stim, '_volumeCoeff'):
+                        self.sound_stim._volumeCoeff = 1.0
+                    if hasattr(self.sound_player, '_volumeCoeff'):
+                        self.sound_player._volumeCoeff = 1.0
+                        
+                    print("INFO: 超大音量設定完了（WAVファイル98%振幅 + PsychoPy最大音量）")
+                except Exception as vol_err:
+                    print(f"INFO: 音量設定の確認に失敗: {vol_err}")
+                
+                # 音声オブジェクトが正常に作成されたか確認
+                if self.sound_stim and self.sound_player:
+                    print("INFO: PTB最適化設定による音声オブジェクト作成に成功しました")
+                    
+                    # 事前に音声の長さなどの情報を取得（デバッグ用）
+                    if hasattr(self.sound_stim, 'getDuration'):
+                        try:
+                            stim_duration = self.sound_stim.getDuration()
+                            player_duration = self.sound_player.getDuration()
+                            print(f"INFO: 音声長さ - 刺激音: {stim_duration:.3f}秒, プレイヤー音: {player_duration:.3f}秒")
+                        except Exception as duration_error:
+                            print(f"INFO: 音声長さの取得に失敗: {duration_error}")
+                else:
+                    raise Exception("音声オブジェクトがNoneです")
+                    
+            except Exception as e:
+                print(f"警告: PTB最適化設定での音声作成に失敗しました: {e}")
+                
+                # シンプルな方法で再試行（音量強化版）
+                try:
+                    self.sound_stim = sound.Sound(self.config.SOUND_STIM, volume=1.0)
+                    self.sound_player = sound.Sound(self.config.SOUND_PLAYER, volume=1.0)
+                    
+                    # さらに音量を確実に設定
+                    if hasattr(self.sound_stim, 'setVolume'):
+                        self.sound_stim.setVolume(2.0)
+                    if hasattr(self.sound_player, 'setVolume'):
+                        self.sound_player.setVolume(2.0)
+                    
+                    print("INFO: シンプルなパラメータ（音量強化版）で音声オブジェクト作成に成功しました")
+                except Exception as e2:
+                    print(f"警告: シンプルな方法での音声作成にも失敗: {e2}")
+                    
+                    # 最終的にトーン音を使用
+                    try:
+                        self.sound_stim = sound.Sound(value=800, secs=0.3)  # 800Hz、0.3秒
+                        self.sound_player = sound.Sound(value=600, secs=0.3)  # 600Hz、0.3秒
+                        print("INFO: トーン音による音声オブジェクト作成成功")
+                    except Exception as tone_error:
+                        print(f"エラー: トーン音の作成にも失敗: {tone_error}")
+                        # 音を使わないモード
+                        print("警告: 音声なしでの実行を続行します")
+                        self.sound_stim = None
+                        self.sound_player = None
+            
+        except Exception as e:
+            print(f"エラー: 音声環境の設定に失敗しました: {e}")
+            self.sound_stim = None
+            self.sound_player = None
+    
+    def setup_ui(self):
+        """実験環境をセットアップ - ウィンドウ表示を含む完全な環境"""
+        print("INFO: ウィンドウ表示を含む実験環境をセットアップします")
+        
+        # 音声環境のセットアップ
+        self._setup_audio()
+        
+        # クロックの設定
+        self.clock = core.Clock()  # タップ時刻測定用
+        self.timer = core.Clock()  # イベントタイミング用
+        
+        # ウィンドウの作成（デバッグ情報付き）
+        print("INFO: ウィンドウ作成を開始...")
+        try:
+            # ウィンドウ作成前の環境情報を出力
+            from psychopy import __version__ as psychopy_version
+            print(f"INFO: PsychoPy バージョン: {psychopy_version}")
+            
+            import platform
+            print(f"INFO: OS: {platform.system()} {platform.release()}")
+            print(f"INFO: Python: {platform.python_version()}")
+            
+            # PsychoPyの詳細ログを有効化（問題診断用）
+            from psychopy import logging
+            logging.console.setLevel(logging.DEBUG)
+            print("INFO: PsychoPy詳細ログを有効化しました")
+            
+            # ウィンドウ作成（ミリ秒精度タイミング用に最適化）
+            self.win = visual.Window(
+                size=(800, 600),
+                monitor="testMonitor",
+                color="black",
+                fullscr=False,
+                allowGUI=True,
+                screen=0,
+                units='pix',
+                waitBlanking=False,  # VSyncを無効化してタイミング精度を優先
+                pos=(0, 0)
+            )
+            
+            # ウィンドウ作成成功の確認
+            if self.win:
+                print(f"INFO: ウィンドウ作成成功: サイズ = {self.win.size}, 位置 = {self.win.pos}")
+                
+                # 最初のフレーム描画で初期化を確認
+                self.win.flip()
+                print("INFO: 初期フレーム描画成功")
+            else:
+                print("警告: ウィンドウオブジェクトが作成されましたが、None値です")
+        
+        except Exception as e:
+            # ウィンドウ作成失敗時のフォールバック
+            print(f"ERROR: ウィンドウ作成中にエラーが発生しました: {e}")
+            print("INFO: コンソールモードにフォールバックします")
+            self.win = None
+        
+        # テキスト表示の設定（ウィンドウが作成された場合のみ）
+        if self.win:
+            try:
+                self.text = visual.TextStim(
+                    self.win,
+                    text="準備ができたらSpaceキーを押してください",
+                    color="white",
+                    height=30,
+                    wrapWidth=700
+                )
+                print("INFO: テキスト表示オブジェクト作成成功")
+            except Exception as e:
+                print(f"ERROR: テキスト表示オブジェクト作成中にエラー: {e}")
+                self.text = None
+        else:
+            self.text = None
     
     def run_stage1(self):
-        """Run Stage 1 of the experiment (metronome phase)."""
+        """コンソールベースでStage 1を実行（瞑目実験用）"""
         stage1_num = 0
         player_taps = 0
         required_taps = self.config.STAGE1
         
-        # Display instructions
-        self.text.setText("Stage 1: Listen to the rhythm\nPress SPACE to start")
-        self.text.draw()
-        self.win.flip()
+        # コンソールに指示を表示
+        print("\nStage 1: メトロノームリズムに合わせてタップしてください")
+        print("準備ができたらSpaceキーを押してください")
         
-        # Wait for space to start
+        # Spaceキーを待つ
         event.waitKeys(keyList=['space'])
         
-        # Start countdown
-        for countdown in range(3, 0, -1):
-            self.text.setText(str(countdown))
-            self.text.draw()
-            self.win.flip()
-            core.wait(1.0)
+        # 開始メッセージ
+        print("開始! メトロノームのリズムに交互にタップしてください")# ExperimentRunnerクラスの__init__あたりに追加
+        # self.play_call_count の初期化は __init__ で行うか、run_stage1 のこの位置で行うのが適切です。
+        # 現在のコードではこの位置にあります。
+        self.play_call_count = 0
+        # ループ外に存在していたデバッグ用のifブロックを削除します。
+        # このブロックは stage1_num のスコープや timer の状態に関して問題を引き起こす可能性がありました。
+        # ログに見られる最初の DEBUG: Play Call #1 はこのブロックから出力されていました。
         
         # Reset timer and clock
         self.timer.reset()
         self.clock.reset()
         
-        # Display tapping instructions
-        self.text.setText("Listen to the rhythm")
-        
         # Event loop for Stage 1
         while True:
-            # Display instructions
-            self.text.draw()
-            self.win.flip()
-            
-            # Play sound at fixed interval (only until required number of stimuli)
+            # 一定間隔で音を鳴らす
             if self.timer.getTime() >= self.config.SPAN and stage1_num < required_taps:
+                # このブロック内のデバッグコードは、音声再生の直前に実行されるべきものです。
+                current_timer_val = self.timer.getTime() 
                 stage1_num += 1
-                # 音声の状態をチェック
-                if self.sound_stim:
-                    if hasattr(self.sound_stim, 'status') and self.sound_stim.status == 1:
-                        # 既に再生中の場合は止めてから再生
+                # タイマーリセット
+                self.timer.reset()
+                time_after_reset = self.timer.getTime() 
+
+                self.play_call_count += 1
+                print(f"DEBUG: Play Call #{self.play_call_count}")
+                print(f"DEBUG: Condition met. Timer val: {current_timer_val:.4f}, SPAN: {self.config.SPAN}")
+                print(f"DEBUG: Timer reset. Val after reset: {time_after_reset:.4f}")
+
+                # 音声再生前の状態確認と強制停止
+                if self.sound_stim and hasattr(self.sound_stim, 'status'):
+                    print(f"DEBUG: Sound_stim status BEFORE play: {self.sound_stim.status}")
+                    if self.sound_stim.status == 1: # 1は再生中 (PLAYING)
+                        print("DEBUG: Sound_stim (Stage1) was playing, stopping it now.")
                         self.sound_stim.stop()
-                        # 完全に停止するまで少し待機
-                        core.wait(0.02)
-                    
-                    # 音声の即時再生（音量の調整なし、待機なしで高精度を維持）
-                    try:
-                        self.sound_stim.play()
-                    except Exception as play_err:
-                        print(f"警告: 音声再生に失敗しましたが続行します: {play_err}")
+                        # PTBが停止を処理する時間を増やす
+                        core.wait(0.05) # 50ms
                 
-                # Record stimulus tap time
+                # 音声再生
+                if self.sound_stim:
+                    print(f"DEBUG: Playing sound_stim.")
+                    if hasattr(self.sound_stim, 'setVolume'): self.sound_stim.setVolume(2.0)
+                    self.sound_stim.play()
+                    if hasattr(self.sound_stim, 'status'):
+                        print(f"DEBUG: Sound_stim status AFTER play issued: {self.sound_stim.status}")
+                    
+                    # 音声が確実に再生されるよう適切な待機時間を設定
+                    # 0.3秒の音声ファイルに対して十分な再生時間を確保
+                    core.wait(0.35)  # 音声長さ + マージン
+                else:
+                    print("DEBUG: sound_stim is None, cannot play.")
+                
+                print(f"[{stage1_num}回目の刺激音]")
+                # 刺激タップ時刻を記録
                 current_time = self.clock.getTime()
                 self.stim_tap.append(current_time)
                 self.full_stim_tap.append(current_time)
-                
-                self.timer.reset()
-                
-                # 全ての刺激音が再生された後に指示文を変更
-                if stage1_num >= required_taps:
-                    # 刺激音が完了したら、プレイヤーにリズムに合わせるよう指示
-                    if player_taps < required_taps:
-                        remaining = required_taps - player_taps
-                        self.text.setText(f"リズムに合わせてタップしてください\nあと {remaining} 回")
             
-            # Check for key press
+            # キー入力をチェック
             keys = event.getKeys()
             if 'space' in keys:
-                # Record player tap time
+                # プレイヤータップ時刻を記録
                 current_time = self.clock.getTime()
                 self.player_tap.append(current_time)
                 self.full_player_tap.append(current_time)
                 player_taps += 1
                 
-                # 音声の状態をチェック
-                if hasattr(self.sound_player, 'status') and self.sound_player.status == 1:
-                    # 既に再生中の場合は止めてから再生
-                    self.sound_player.stop()
-                    # 完全に停止するまで少し待機
-                    core.wait(0.02)
-                    
-                # 音声再生と完了を待機
-                if self.sound_player is not None:  # Noneでないことを確認
+                # プレイヤー音声再生
+                if self.sound_player:
                     try:
+                        # すでに再生中なら停止
+                        if hasattr(self.sound_player, 'status') and self.sound_player.status == 1: # PLAYING
+                            print("DEBUG: Sound_player (Stage1) was playing, stopping it now.")
+                            self.sound_player.stop()
+                            core.wait(0.05)  # 停止待機時間を調整 (50ms)
+                        
+                        # 即時再生
+                        if hasattr(self.sound_player, 'setVolume'): self.sound_player.setVolume(2.0)
                         self.sound_player.play()
+                        print(f"[{player_taps}回目のプレイヤータップ音]")
                     except Exception as play_err:
                         print(f"警告: 音声再生に失敗しましたが続行します: {play_err}")
                 
-                # 刺激音の再生が完了した後は、残りのタップ数を更新して表示
+                # 刺激音の再生終了後、残りのタップ数を更新
                 if stage1_num >= required_taps and player_taps < required_taps:
                     remaining = required_taps - player_taps
-                    self.text.setText(f"リズムに合わせてタップしてください\nあと {remaining} 回")
+                    print(f"リズムに合わせてタップしてください。あと {remaining} 回")
             
+            # Escapeキーで中断
             if 'escape' in keys:
-                self.win.close()
-                core.quit()
+                print("実験が中断されました")
                 return False
             
-            # 両方のカウントが条件を満たした場合にのみStage1を終了
+            # Stage1完了条件
             if stage1_num >= required_taps and player_taps >= required_taps:
-                # Stage1完了のログ出力
                 print("INFO: Stage1完了。Stage2へ移行します")
                 
-                # 最後の刺激タップ時刻を記録（存在する場合）
+                # 最後の刺激タップ時刻を記録
                 if len(self.stim_tap) > 0:
                     self.last_stim_tap_time = self.stim_tap[-1]
                 else:
@@ -311,27 +433,23 @@ class ExperimentRunner:
                     self.last_stim_tap_time = self.clock.getTime()
                     print("警告: Stage1で刺激タップデータが記録されていません。現在時刻を使用します。")
                 
-                # データ確認（実際のタップ時刻のみを記録）
+                # データ確認
                 print(f"INFO: Stage1終了時点での記録データ - 刺激タップ: {len(self.stim_tap)}回, プレイヤータップ: {len(self.player_tap)}回")
                 
-                # リズム連続性を保証するために次のタップ予測時刻を計算
-                # 一定間隔で演奏していた最後のタップから次の理想的なタップタイミングを予測
+                # 次のタップ予測時刻を計算
                 self.next_expected_tap_time = self.last_stim_tap_time + self.config.SPAN
                 print(f"INFO: 次の予想タップ時刻: {self.next_expected_tap_time:.3f}秒")
                 
                 return True
     
     def run_stage2(self):
-        """Run Stage 2 of the experiment (interactive tapping)."""
+        """コンソールベースでStage 2を実行（瞑目実験用）"""
         flag = 1  # 0: Player's turn, 1: Stimulus turn
         turn = 0
         
-        # ステージ間の連続性を保つため、テキストを控えめに表示
-        self.text.setText("Stage 2: Alternating")
-        self.text.setHeight(0.03)  # テキストサイズを小さく
-        self.text.setPos([0, 0.8])  # 画面上部に表示
-        self.text.draw()
-        self.win.flip()
+        # ステージ間の連続性を保つため、コンソールに指示を表示
+        print("\nStage 2: 交互タッピング開始")
+        print("刺激音に合わせてタップしてください")
         
         # ステージ1から連続的なリズムを維持するための設定
         # この時点での経過時間を計算
@@ -358,41 +476,34 @@ class ExperimentRunner:
         # 状態をリセットして次のタップに備える
         self.timer.reset()
         
-        # Start message
-        self.text.setText("Follow the rhythm")
-        self.text.setHeight(0.03)  # 小さめのテキスト
-        self.text.setPos([0, 0.7])  # 画面上部寄りに配置
-        
         # ログ出力
         print(f"INFO: Stage2開始 - 次のタップまでの待機時間: {random_second:.3f}秒")
         
-        # Event loop for Stage 2
+        # Stage 2の主要ループ
         while True:
-            # Display instructions
-            self.text.draw()
-            self.win.flip()
-            
-            # Stimulus turn
-            if self.timer.getTime() >= random_second and flag == 1:
+            # 刺激側のターン
+            if self.sound_stim and self.timer.getTime() >= random_second and flag == 1:
                 # 音声の状態をチェック
-                if hasattr(self.sound_stim, 'status') and self.sound_stim.status == 1:
+                if hasattr(self.sound_stim, 'status') and self.sound_stim.status == 1: # PLAYING
                     # 既に再生中の場合は止めてから再生
+                    print("DEBUG: Sound_stim (Stage2) was playing, stopping it now.")
                     self.sound_stim.stop()
                     # 完全に停止するまで少し待機
-                    core.wait(0.02)
+                    core.wait(0.05) # 50ms
                     
                 # 音声の即時再生（待機なしで高精度を維持）
                 if self.sound_stim is not None:
                     # 安全にsetVolumeを呼び出す（あれば）
                     if hasattr(self.sound_stim, 'setVolume'):
                         try:
-                            self.sound_stim.setVolume(1.0)  # 音量を最大に設定
+                            self.sound_stim.setVolume(2.0)  # 音量を最大に設定
                         except Exception as vol_err:
                             print(f"警告: 音量設定に失敗しましたが続行します: {vol_err}")
                     
-                    # 引数なしでplay()を呼び出し（より広く互換性がある）
+                    # 最小レイテンシーでplay()を呼び出し
                     try:
                         self.sound_stim.play()
+                        print(f"[{turn+1}回目の刺激音]")
                     except Exception as play_err:
                         print(f"警告: 音声再生に失敗しましたが続行します: {play_err}")
                 
@@ -404,25 +515,21 @@ class ExperimentRunner:
                 if hasattr(self.model, 'get_hypothesis'):
                     self.hypo.append(self.model.get_hypothesis())
                 
-                # Switch to player's turn
+                # プレイヤーのターンに切り替え
                 flag = 0
                 turn += 1
                 
-                # 最後のターンに達したらフラグを設定するが、すぐには終了しない
+                # 最後のターンに達したら終了
                 if turn >= (self.config.STAGE2 + self.config.BUFFER*2):
-                    # ログメッセージを安全に表示
-                    print(f"INFO: 最終ターン({turn})に到達しました。プレイヤーの最後のタップを待機中...")
+                    # 終了メッセージを表示
+                    print(f"INFO: 最終ターン({turn})に到達しました。最後のタップを行ってください")
                     self.final_turn_reached = True
                     
                     # プレイヤーがタップするまで待機
                     waiting_for_final_tap = True
                     while waiting_for_final_tap:
-                        # テキスト表示を更新して最後のタップを促す
-                        self.text.setText("最後のタップを行ってください")
-                        self.text.setHeight(0.08)  # より大きく表示
-                        self.text.setColor("yellow")  # 目立つ色に
-                        self.text.draw()
-                        self.win.flip()
+                        # コンソールで最後のタップを促す
+                        print("最後のタップを行ってください (Spaceキー) または 終了 (Escキー)", end="\r")
                         
                         # キー入力をチェック
                         final_keys = event.getKeys()
@@ -440,13 +547,7 @@ class ExperimentRunner:
                                     print(f"警告: 最終タップの音声再生に失敗: {play_err}")
                             
                             # 完了メッセージを表示
-                            self.text.setText("実験完了！\nお疲れ様でした")
-                            self.text.setColor("green")
-                            self.text.draw()
-                            self.win.flip()
-                            
-                            # 少し待機して確認
-                            core.wait(1.0)
+                            print("\n実験完了！お疲れ様でした")
                             
                             # 待機ループを終了
                             waiting_for_final_tap = False
@@ -454,8 +555,7 @@ class ExperimentRunner:
                         
                         elif 'escape' in final_keys:
                             # エスケープキーで中断
-                            self.win.close()
-                            core.quit()
+                            print("\n実験が中断されました")
                             return False
                         
                         # 短い待機で処理負荷を軽減
@@ -464,38 +564,34 @@ class ExperimentRunner:
                     # 実験を終了
                     return True
             
-            if flag == 0:
+            # プレイヤーのターン
+            if self.sound_player and flag == 0:
                 keys = event.getKeys()
                 if 'space' in keys:
                     current_time = self.clock.getTime()
                     self.player_tap.append(current_time)
                     self.full_player_tap.append(current_time)
-                    # 音声の状態をチェック
-                    if hasattr(self.sound_player, 'status') and self.sound_player.status == 1:
-                        # 既に再生中の場合は止めてから再生
-                        self.sound_player.stop()
-                        # 完全に停止するまで少し待機
-                        core.wait(0.02)
-                        
-                    # 音声再生と完了を待機（音量を大きくして確実に再生されるようにする）
+                    
+                    # プレイヤー音声再生
                     if self.sound_player is not None:
-                        # 安全にsetVolumeを呼び出す（あれば）
-                        if hasattr(self.sound_player, 'setVolume'):
-                            try:
-                                self.sound_player.setVolume(1.0)  # 音量を最大に設定
-                            except Exception as vol_err:
-                                print(f"警告: 音量設定に失敗しましたが続行します: {vol_err}")
-                        
-                        # 引数なしでplay()を呼び出し（より広く互換性がある）
+                        # 安全に状態をチェックして停止（必要な場合）
+                        if hasattr(self.sound_player, 'status') and self.sound_player.status == 1: # PLAYING
+                            print("DEBUG: Sound_player (Stage2) was playing, stopping it now.")
+                            self.sound_player.stop()
+                            core.wait(0.05)  # 停止完了を待機 (50ms)
+                            
+                        # 再生
                         try:
+                            if hasattr(self.sound_player, 'setVolume'): self.sound_player.setVolume(2.0)
                             self.sound_player.play()
+                            print(f"[{turn}回目のプレイヤータップ音]")
                         except Exception as play_err:
                             print(f"警告: 音声再生に失敗しましたが続行します: {play_err}")
                     
-                    # より長い待機時間で安定性向上（再生が完了するのを待つ）
-                    core.wait(0.2)  # 待機時間を延長
+                    # 最小限の待機時間で高精度を維持
+                    core.wait(0.1)  # タイミング精度向上のため待機時間を短縮
                     
-                    # タップ時系列の安全な同期エラー計算
+                    # 同期エラー計算
                     if len(self.player_tap) >= 2 and len(self.stim_tap) > 0:
                         # 最後の刺激タップと直近2回のプレイヤータップを使用
                         se = self.stim_tap[-1] - (self.player_tap[-1] + self.player_tap[-2])/2
@@ -512,8 +608,7 @@ class ExperimentRunner:
                     flag = 1
                 
                 if 'escape' in keys:
-                    self.win.close()
-                    core.quit()
+                    print("\n実験が中断されました")
                     return False
     
     def analyze_data(self):
@@ -572,10 +667,11 @@ class ExperimentRunner:
                 if t-1 < len(self.player_tap):
                     self.stim_iti.append(self.stim_tap[t] - self.player_tap[t-1])
             
-            for t in range(1, len(self.player_tap)):
-                # プレイヤーのITI計算: 現在のプレイヤータップと前回の刺激タップの差
-                if t-1 < len(self.stim_tap):
-                    self.player_iti.append(self.player_tap[t] - self.stim_tap[t-1])
+            for t in range(len(self.player_tap)):
+                # プレイヤーのITI計算: 現在のプレイヤータップと対応する刺激タップの差
+                # 交互タッピングでは同じインデックス同士が対応するタップペア
+                if t < len(self.stim_tap):
+                    self.player_iti.append(self.player_tap[t] - self.stim_tap[t])
             
             # 同期誤差(SE)の計算
             for t in range(len(self.player_tap)):
@@ -601,6 +697,13 @@ class ExperimentRunner:
             if self.hypo and len(self.hypo) > buffer_start:
                 self.hypo = self.hypo[buffer_start:]
             
+            # ITIの統計情報を出力（デバッグ用）
+            if len(self.stim_iti) > 0:
+                print(f"INFO: 刺激ITI - 個数: {len(self.stim_iti)}, 平均: {sum(self.stim_iti)/len(self.stim_iti):.3f}秒, 最小: {min(self.stim_iti):.3f}秒, 最大: {max(self.stim_iti):.3f}秒")
+            
+            if len(self.player_iti) > 0:
+                print(f"INFO: プレイヤーITI - 個数: {len(self.player_iti)}, 平均: {sum(self.player_iti)/len(self.player_iti):.3f}秒, 最小: {min(self.player_iti):.3f}秒, 最大: {max(self.player_iti):.3f}秒")
+            
             # データを保存
             self._save_data_organized()
             
@@ -612,32 +715,32 @@ class ExperimentRunner:
             traceback.print_exc()
             return False
     
-    def _remove_buffer_data(self, buffer):
-        """Remove buffer data from beginning only (not end) of primary data lists.
-        
-        Args:
-            buffer: Number of data points to remove from beginning
-        """
-        # Helper function to slice lists safely (only from beginning)
-        def safe_slice_start(data_list, start):
-            if not data_list:
-                return []
-            if start >= len(data_list):
-                return []
-            return data_list[start:]
-        
-        # Only remove buffer from the beginning of tap times
-        print(f"INFO: バッファー処理前 - 刺激タップ: {len(self.stim_tap)}回, プレイヤータップ: {len(self.player_tap)}回")
-        self.stim_tap = safe_slice_start(self.stim_tap, buffer)
-        self.player_tap = safe_slice_start(self.player_tap, buffer)
-        print(f"INFO: バッファー処理後 - 刺激タップ: {len(self.stim_tap)}回, プレイヤータップ: {len(self.player_tap)}回")
-        
-        # Hypothesis data (raw data) should also have buffer removed from beginning
-        if self.hypo:
-            self.hypo = safe_slice_start(self.hypo, buffer)
-        
-        # Note: The derived measures (SE, ITI, etc.) are calculated AFTER removing buffers,
-        # so we don't need to remove buffer from those arrays.
+    # def _remove_buffer_data(self, buffer):
+    #     """Remove buffer data from beginning only (not end) of primary data lists.
+    #     
+    #     Args:
+    #         buffer: Number of data points to remove from beginning
+    #     """
+    #     # Helper function to slice lists safely (only from beginning)
+    #     def safe_slice_start(data_list, start):
+    #         if not data_list:
+    #             return []
+    #         if start >= len(data_list):
+    #             return []
+    #         return data_list[start:]
+    #     
+    #     # Only remove buffer from the beginning of tap times
+    #     print(f"INFO: バッファー処理前 - 刺激タップ: {len(self.stim_tap)}回, プレイヤータップ: {len(self.player_tap)}回")
+    #     self.stim_tap = safe_slice_start(self.stim_tap, buffer)
+    #     self.player_tap = safe_slice_start(self.player_tap, buffer)
+    #     print(f"INFO: バッファー処理後 - 刺激タップ: {len(self.stim_tap)}回, プレイヤータップ: {len(self.player_tap)}回")
+    #     
+    #     # Hypothesis data (raw data) should also have buffer removed from beginning
+    #     if self.hypo:
+    #         self.hypo = safe_slice_start(self.hypo, buffer)
+    #     
+    #     # Note: The derived measures (SE, ITI, etc.) are calculated AFTER removing buffers,
+    #     # so we don't need to remove buffer from those arrays.
     
     def _save_data_organized(self):
         """階層化されたディレクトリ構造でデータを保存する"""
@@ -778,11 +881,22 @@ class ExperimentRunner:
             # Process and save data
             self.analyze_data()
             
-            # Show completion message
-            self.text.setText("Experiment completed!\nThank you for participating.")
-            self.text.draw()
-            self.win.flip()
-            core.wait(3.0)
+            # 完了メッセージ（コンソールベース）
+            print("\n実験が正常に完了しました！お疲れ様でした")
+            
+            # GUIがある場合（将来の拡張のために残しておく）
+            if self.win is not None and self.text is not None:
+                try:
+                    self.text.setText("Experiment completed!\nThank you for participating.")
+                    self.text.draw()
+                    self.win.flip()
+                    core.wait(3.0)
+                except Exception as e:
+                    print(f"注: GUI表示に失敗しましたが、実験は正常に完了しています: {e}")
+            
+            # 実験終了時にガベージコレクションを再有効化
+            gc.enable()
+            gc.collect()  # 明示的にGCを実行して実験中に溜まったメモリを解放
             
             return True
             
@@ -791,6 +905,9 @@ class ExperimentRunner:
             return False
             
         finally:
+            # 実験中断時もガベージコレクションを再有効化
+            gc.enable()
+            
             # Clean up
             if self.win:
                 self.win.close()

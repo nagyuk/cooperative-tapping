@@ -71,6 +71,12 @@ def main():
         help='Variance scale for random timing'
     )
     
+    parser.add_argument(
+        '--user-id',
+        default='anonymous',
+        help='Subject/participant ID for data organization'
+    )
+    
     args = parser.parse_args()
     
     # Create configuration
@@ -99,6 +105,7 @@ def main():
     print(f"Starting experiment with {args.model.upper()} model")
     print("="*50)
     print(f"Model: {args.model}")
+    print(f"Subject ID: {args.user_id}")
     print(f"Output directory: {output_dir}")
     print(f"Base interval: {config.SPAN} seconds")
     print(f"Stage 1 taps: {config.STAGE1}")
@@ -117,7 +124,8 @@ def main():
     experiment = ExperimentRunner(
         config, 
         model_type=args.model, 
-        output_dir=output_dir
+        output_dir=output_dir,
+        user_id=args.user_id
     )
     
     # Run experiment
