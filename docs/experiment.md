@@ -1,10 +1,10 @@
 # Experiment Documentation
 
-This document describes the **windowless** cooperative tapping experiment implemented in this project.
+This document describes the cooperative tapping experiment implemented in this project using a **minimal window approach**.
 
 ## Experiment Overview
 
-The cooperative tapping experiment is designed to study the rhythmic interaction between a human participant and a computer model. This implementation operates entirely through console interface with PTB audio backend for millisecond-precision timing. Participants perform the experiment with closed eyes (瞑目) as required by the experimental protocol. The experiment consists of two stages:
+The cooperative tapping experiment is designed to study the rhythmic interaction between a human participant and a computer model. This implementation uses an invisible minimal window (1x1 pixel) for keyboard event detection while operating primarily through console interface with PTB audio backend for millisecond-precision timing. Participants perform the experiment with closed eyes (瞑目) as required by the experimental protocol. The experiment consists of two stages:
 
 1. **Stage 1 (Metronome Stage)**: A fixed-interval metronome plays a series of beats to establish the rhythm.
 2. **Stage 2 (Interactive Stage)**: The participant and computer take turns tapping in an alternating pattern.

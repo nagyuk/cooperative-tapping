@@ -1,8 +1,12 @@
 # Cooperative Tapping Task / 協調タッピング課題
 
-This project implements a **windowless** cooperative tapping experiment system designed to study human-computer rhythmic interaction with millisecond-precision timing. The system operates entirely through console interface, as participants perform the experiment with closed eyes (瞑目). It provides three different models of interaction.
+This project implements a cooperative tapping experiment system designed to study human-computer rhythmic interaction with millisecond-precision timing. The system uses a **minimal window approach** (invisible 1x1 pixel window) for keyboard event detection while operating primarily through console interface. This design is optimized for participants who perform the experiment with closed eyes (瞑目). It provides three different models of interaction.
 
-このプロジェクトは、ミリ秒精度のタイミングで人間とコンピュータのリズム的相互作用を研究するための**ウィンドウレス**協調タッピング実験システムを実装しています。被験者が瞑目（目を閉じた状態）で実験を行うため、システムは完全にコンソールインターフェースで動作します。3種類の異なる相互作用モデルを提供します。
+このプロジェクトは、ミリ秒精度のタイミングで人間とコンピュータのリズム的相互作用を研究するための協調タッピング実験システムを実装しています。キーボードイベント検出のため**最小ウィンドウ方式**（不可視の1x1ピクセルウィンドウ）を採用しており、主にコンソールインターフェースで動作します。この設計は被験者が瞑目（目を閉じた状態）で実験を行うことに最適化されています。3種類の異なる相互作用モデルを提供します。
+
+**Note**: Complete windowless implementation was attempted but keyboard event detection in PsychoPy requires a window context. The minimal window approach ensures reliable millisecond-precision timing while maintaining the console-based interface.
+
+**注意**: 完全なウィンドウレス実装を試みましたが、PsychoPyのキーボードイベント検出にはウィンドウコンテキストが必要でした。最小ウィンドウ方式により、コンソールベースのインターフェースを維持しながら、確実なミリ秒精度のタイミングを実現しています。
 
 1. **SEA (Synchronization Error Averaging) Model**: Adjusts timing based on averaged synchronization errors.  
    **SEA（同期エラー平均化）モデル**：同期エラーの平均に基づいてタイミングを調整します。
