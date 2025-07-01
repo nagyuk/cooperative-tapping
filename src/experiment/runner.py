@@ -1,7 +1,7 @@
 """
 Main experiment runner for cooperative tapping task.
 Handles experiment flow, data collection, and console-based interactions.
-最小ウィンドウ実装：ミリ秒精度の時間測定に最適化（キー入力検出用）
+ウィンドウレス実装：ミリ秒精度の時間測定に最適化
 """
 import os
 import datetime
@@ -18,8 +18,8 @@ prefs.hardware['audioBufferSize'] = 128  # PTBでの最高精度タイミング�
 # 低レイテンシーモードを最高精度に設定
 prefs.hardware['audioLatencyMode'] = 0  # 最高精度モード（ミリ秒精度を確保）
 
-# その他のpsychopyモジュールをインポート
-from psychopy import visual, core, event, sound
+# その他のpsychopyモジュールをインポート（visualは使用しない）
+from psychopy import core, event, sound
 
 # ガベージコレクションを最適化して実験中のメモリ使用を効率化
 import gc
@@ -48,7 +48,7 @@ except Exception as e:
 from ..models import SEAModel, BayesModel, BIBModel
 
 class ExperimentRunner:
-    """Runner for the cooperative tapping experiment (minimal window version)."""
+    """Runner for the cooperative tapping experiment (windowless version)."""
     
     def __init__(self, config, model_type='sea', output_dir='data/raw', user_id='anonymous'):
         """Initialize experiment with configuration and model.
@@ -89,8 +89,7 @@ class ExperimentRunner:
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
         
-        # UI components
-        self.win = None  # 最小ウィンドウ（キー入力検出用）
+        # UI components（ウィンドウレスなのでwindowとtextは不要）
         self.sound_stim = None
         self.sound_player = None
         self.clock = None
@@ -195,33 +194,8 @@ class ExperimentRunner:
             raise
     
     def setup_ui(self):
-        """実験環境をセットアップ（最小ウィンドウ実装）"""
-        print("\n=== 実験環境のセットアップ（最小ウィンドウ実装） ===")
-        
-        # 最小ウィンドウを作成（キーボードイベント検出のため）
-        # 1x1ピクセルの不可視ウィンドウ
-        self.win = visual.Window(
-            size=(1, 1),  # 最小サイズ
-            pos=(0, 0),   # 画面中央
-            color='black',
-            screen=0,     # プライマリディスプレイ
-            fullscr=False,
-            allowGUI=False,
-            monitor='testMonitor',
-            winType='pyglet',
-            units='pix',
-            waitBlanking=False,  # VSyncを無効化してタイミング精度を向上
-            autoLog=False
-        )
-        
-        # ウィンドウを最小化（可能な限り非表示に）
-        try:
-            self.win.winHandle.minimize()  # 最小化を試みる
-        except:
-            pass  # 最小化できない環境では無視
-        
-        print("INFO: 最小ウィンドウ実装 - キーボードイベント検出用")
-        print("INFO: PsychoPyのevent.getKeys()はウィンドウコンテキストが必要なため最小ウィンドウを使用")
+        """実験環境をセットアップ（ウィンドウレス）"""
+        print("\n=== 実験環境のセットアップ（ウィンドウレス） ===")
         
         # 音声環境のセットアップ
         self.setup_audio()
@@ -322,39 +296,37 @@ class ExperimentRunner:
             
             # 両方のカウントが条件を満たした場合にのみStage1を終了
             if stage1_num >= required_taps and player_taps >= required_taps:
-                # タイミングクリティカルな処理を最優先で実行
+                print(f"\nStage 1 完了！")
+                print(f"刺激音: {stage1_num}回, プレイヤータップ: {player_taps}回")
+                
+                # 最後の刺激タップ時刻を記録
                 if len(self.stim_tap) > 0:
                     self.last_stim_tap_time = self.stim_tap[-1]
                 else:
                     self.last_stim_tap_time = self.clock.getTime()
                 
-                # 次の予想タップ時刻を事前計算（遅延最小化）
+                # 次の予想タップ時刻を計算
                 self.next_expected_tap_time = self.last_stim_tap_time + self.config.SPAN
-                
-                # Stage2用タイマーを事前準備
-                self.stage2_start_time = self.clock.getTime()
-                
-                # 非クリティカルな出力は最後に
-                print(f"\nStage 1 完了！")
-                print(f"刺激音: {stage1_num}回, プレイヤータップ: {player_taps}回")
-                print("次のステージに移ります...")
                 
                 return True
     
     def run_stage2(self):
-        """Stage 2 相互作用段階（タイミング最適化版）"""
+        """Stage 2 相互作用段階（コンソールベース）"""
+        print("\n" + "="*50)
+        print("Stage 2: 相互作用段階")
+        print("="*50)
+        print("交互にタップを続けてください")
+        print(f"設定: {self.config.STAGE2}回の相互作用")
+        print("="*50 + "\n")
+        
         flag = 1  # 0: Player's turn, 1: Stimulus turn
         turn = 0
         
-        # Stage1から事前計算されたタイマーを使用（遅延最小化）
-        if hasattr(self, 'stage2_start_time'):
-            time_elapsed_since_prep = self.clock.getTime() - self.stage2_start_time
-            time_to_next_tap = self.next_expected_tap_time - self.clock.getTime()
-        else:
-            # フォールバック計算
-            time_to_next_tap = self.next_expected_tap_time - self.clock.getTime()
+        # Stage1からの連続性を保つ
+        current_time = self.clock.getTime()
+        time_to_next_tap = self.next_expected_tap_time - current_time
         
-        # 時間調整（シンプル化）
+        # 時間調整
         if time_to_next_tap <= 0:
             elapsed_spans = abs(time_to_next_tap) / self.config.SPAN
             adjustment = (1 - (elapsed_spans - int(elapsed_spans))) * self.config.SPAN
@@ -366,16 +338,8 @@ class ExperimentRunner:
         # ランダム性を加味
         random_second = time_to_next_tap + np.random.normal(0, self.config.SCALE)
         
-        # タイマーリセット（タイミングクリティカル）
+        # タイマーリセット
         self.timer.reset()
-        
-        # 非クリティカルな出力（タイマーリセット後に実行）
-        print("\n" + "="*50)
-        print("Stage 2: 相互作用段階")
-        print("="*50)
-        print("交互にタップを続けてください")
-        print(f"設定: {self.config.STAGE2}回の相互作用")
-        print("="*50 + "\n")
         
         # Event loop for Stage 2
         while True:
@@ -516,35 +480,19 @@ class ExperimentRunner:
             if self.stim_se and len(self.stim_se) > 0:
                 del self.stim_se[0]
             
-            # 協調交互タッピング課題でのITI計算
-            # プレイヤーのITI計算：刺激音から対応するプレイヤータップまでの時間
-            for t in range(len(self.player_tap)):
-                if t < len(self.stim_tap):
-                    self.player_iti.append(self.player_tap[t] - self.stim_tap[t])
-            
-            # 刺激音のITI計算：プレイヤータップから次の刺激音までの時間
+            # ITIの計算
             for t in range(1, len(self.stim_tap)):
-                if (t-1) < len(self.player_tap):
+                if t-1 < len(self.player_tap):
                     self.stim_iti.append(self.stim_tap[t] - self.player_tap[t-1])
             
-            # 同期誤差(SE)の正しい計算
-            # プレイヤーSE：プレイヤータップと前後の刺激タップの中間点との差
-            for i in range(len(self.player_tap)):
-                # プレイヤーは連続する刺激音の中間でタップすべき
-                # 前後の刺激音が存在する場合のみ計算
-                if i < len(self.stim_tap) and (i+1) < len(self.stim_tap):
-                    ideal_timing = (self.stim_tap[i] + self.stim_tap[i+1]) / 2
-                    se = self.player_tap[i] - ideal_timing
-                    self.player_se.append(se)
+            for t in range(1, len(self.player_tap)):
+                if t-1 < len(self.stim_tap):
+                    self.player_iti.append(self.player_tap[t] - self.stim_tap[t-1])
             
-            # 刺激音のSE：刺激音と前後のプレイヤータップの中間点との差
-            for i in range(1, len(self.stim_tap)):
-                # 刺激音はプレイヤータップの中間でタップすべき
-                # 前後のプレイヤータップが存在する場合のみ計算
-                if (i-1) < len(self.player_tap) and i < len(self.player_tap):
-                    ideal_timing = (self.player_tap[i-1] + self.player_tap[i]) / 2
-                    se = self.stim_tap[i] - ideal_timing
-                    self.stim_se.append(se)
+            # 同期誤差(SE)の計算
+            for t in range(len(self.player_tap)):
+                if t < len(self.stim_tap) and t > 0:
+                    self.player_se.append(self.player_tap[t] - (self.stim_tap[t-1] + self.stim_tap[t])/2)
             
             # ITI変動の計算
             for i in range(len(self.stim_iti) - 1):
@@ -565,18 +513,6 @@ class ExperimentRunner:
                 self.hypo = self.hypo[buffer_start:]
             
             print("データ分析完了")
-            
-            # データの詳細情報を表示（デバッグ用）
-            print(f"\\n=== 計算結果の詳細 ===")
-            if len(self.stim_iti) > 0:
-                print(f"刺激音ITI: 平均={np.mean(self.stim_iti):.3f}秒, 標準偏差={np.std(self.stim_iti):.3f}秒")
-            if len(self.player_iti) > 0:
-                print(f"プレイヤーITI: 平均={np.mean(self.player_iti):.3f}秒, 標準偏差={np.std(self.player_iti):.3f}秒")
-            if len(self.stim_se) > 0:
-                print(f"刺激音SE: 平均={np.mean(self.stim_se):.3f}秒, 標準偏差={np.std(self.stim_se):.3f}秒")
-            if len(self.player_se) > 0:
-                print(f"プレイヤーSE: 平均={np.mean(self.player_se):.3f}秒, 標準偏差={np.std(self.player_se):.3f}秒")
-            print("="*50)
             
             # データを保存
             self._save_data_organized()
@@ -677,9 +613,8 @@ class ExperimentRunner:
             'BUFFER': self.config.BUFFER,
             'SCALE': self.config.SCALE,
             'ExperimentTime': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'WindowMode': 'MinimalWindow',
-            'AudioBackend': 'PTB',
-            'Description': 'Minimal window implementation for keyboard event detection'
+            'WindowlessMode': True,
+            'AudioBackend': 'PTB'
         }
         
         config_df = pd.DataFrame([config_data])
@@ -711,22 +646,23 @@ class ExperimentRunner:
         """Run the complete experiment."""
         try:
             print("\n" + "="*70)
-            print("協調タッピング実験システム（最小ウィンドウ版）")
+            print("協調タッピング実験システム（ウィンドウレス版）")
             print("="*70)
             print(f"モデル: {self.model_type.upper()}")
             print(f"実験ID: {self.serial_num}")
             print("被験者は瞑目（目を閉じた状態）で実験を行ってください")
             print("="*70 + "\n")
             
-            # Set up UI (minimal window and audio)
+            # Set up UI (audio only)
             self.setup_ui()
             
             # Run Stage 1 (metronome)
             if not self.run_stage1():
                 return False
             
-            # Stage1とStage2の継ぎ目を最小化：即座にStage2へ移行
-            # print文は実行せず、タイミング重視
+            # 小休憩
+            print("\n次のステージに移ります...")
+            core.wait(2.0)
             
             # Run Stage 2 (interactive tapping)
             if not self.run_stage2():
