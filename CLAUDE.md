@@ -24,6 +24,17 @@ pip install -e .
 ```
 
 ### Running Experiments
+
+#### MATLAB (推奨)
+```matlab
+% メイン実験スクリプト
+run_experiment
+
+% または直接実行
+final_python_experiment
+```
+
+#### Python (従来版)
 ```bash
 # Run experiment with different models
 run-tapping --model sea
@@ -99,20 +110,25 @@ The `Config` class centralizes all parameters:
 ## Development Notes
 
 - Sound files (`stim_beat.wav`, `player_beat.wav`) must be placed in `assets/sounds/`
-- The system uses millisecond-precision timing measurements via PsychoPy
+- The system uses millisecond-precision timing measurements via MATLAB `posixtime` function
 - Analysis works with Stage 2 data by default (buffer removed)
 - All models use synchronization error feedback for timing adaptation
-- Current branch focuses on MATLAB integration features
+- **メイン実験スクリプト**: `run_experiment.m` (based on `final_python_experiment.m`)
+- Stage1: SPAN間隔（2.0秒）のメトロノーム、Stage2: SPAN/2間隔（1.0秒）の交互タッピング
 
-## MATLAB Migration
+## MATLAB Migration Status
 
-This project is currently being migrated from PsychoPy (Python) to MATLAB for platform standardization and improved integration with analysis workflows.
+**✅ 移行完了**: MATLABベースの実験システムが完成しました。
 
-**Migration Documentation**: See `docs/matlab_migration_roadmap.md` for detailed technical analysis, implementation strategy, and timeline.
+**現在のステータス**:
+- **メインスクリプト**: `run_experiment.m` - 実用レベルの協調タッピング実験システム
+- **実装済み機能**: SEA/Bayes/BIBモデル、Stage1/2システム、データ記録、音声再生
+- **精度**: millisecond-precision timing via `posixtime`
+- **データ互換性**: 既存CSV形式と完全互換
+- **音声品質**: `audioplayer`による滑らかな音声再生
+- **安定性**: 適切な終了処理とタイムアウト機能
 
-**Key Migration Points**:
-- **Target Platform**: MATLAB with Audio System Toolbox + posixtime for millisecond-precision timing
-- **Precision Maintained**: 1-5ms timing accuracy (equivalent or better than current PsychoPy implementation)
-- **Data Compatibility**: Full backward compatibility with existing CSV data formats
-- **Estimated Timeline**: 9-13 weeks for complete migration
-- **Benefits**: Reduced dependencies, improved maintainability, unified development environment
+**技術的改良点**:
+- Stage2間隔を理論的に正しいSPAN/2間隔に修正
+- 無限ループバグの解決
+- CPU負荷軽減とタイムアウト処理の実装
