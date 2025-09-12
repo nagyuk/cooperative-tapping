@@ -5,7 +5,13 @@
 MATLABで以下のコマンドを実行：
 
 ```matlab
-run_experiment
+run_experiment     % ルートディレクトリから実行
+```
+
+または直接：
+```matlab
+cd experiments     % experimentsディレクトリに移動
+main_experiment    % 実験実行
 ```
 
 ## 📋 実験手順
