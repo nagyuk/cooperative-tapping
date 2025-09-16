@@ -7,7 +7,7 @@ function config = experiment_config()
     config = struct();
     
     % 基本タイミングパラメータ
-    config.SPAN = 1.0;          % 基本間隔（秒）
+    config.SPAN = 2.0;          % 基本間隔（秒）
     config.STAGE1 = 10;         % Stage1のタップ数
     config.STAGE2 = 20;         % Stage2のタップ数  
     config.BUFFER = 2;          % 解析から除外するタップ数

@@ -171,48 +171,55 @@ function [runner, success] = run_experiment_stage1(runner)
         current_time = posixtime(datetime('now'));
         timer_elapsed = current_time - runner.timer_start;
         
-        % システム音再生 (Stage1はSPANの2倍間隔)
-        if timer_elapsed >= (runner.config.SPAN * 2) && stage1_num < required_taps
-            current_timer_val = timer_elapsed;
-            stage1_num = stage1_num + 1;
-            runner.timer_start = posixtime(datetime('now'));
-            
-            runner.play_call_count = runner.play_call_count + 1;
-            
-            % 音声再生（前の音をリセットしてから再生）
-            stop(runner.player_stim);
-            play(runner.player_stim);
-            
-            fprintf('[%d回目の刺激音]\n', stage1_num);
-            
-            % データ記録
-            tap_time = posixtime(datetime('now')) - runner.clock_start;
-            runner.stim_tap(end+1) = tap_time;
-            runner.full_stim_tap(end+1) = tap_time;
-        end
-        
-        % キー入力処理
+        % キー入力処理（刺激音より先に処理）
         keys = get_all_recent_keys();
         if any(strcmp(keys, 'space'))
             tap_time = posixtime(datetime('now')) - runner.clock_start;
             runner.player_tap(end+1) = tap_time;
             runner.full_player_tap(end+1) = tap_time;
             player_taps = player_taps + 1;
-            
+
+            % プレイヤー音再生（刺激音と分離）
             stop(runner.player_player);
             play(runner.player_player);
             fprintf('[%d回目のプレイヤータップ音]\n', player_taps);
-            
+
             if stage1_num >= required_taps && player_taps < required_taps
                 remaining = required_taps - player_taps;
                 fprintf('リズムに合わせてタップしてください。あと %d 回\n', remaining);
             end
+        end
+
+        % システム音再生 (Stage1はSPAN間隔) - キー処理の後に実行
+        if timer_elapsed >= runner.config.SPAN && stage1_num < required_taps
+            current_timer_val = timer_elapsed;
+            stage1_num = stage1_num + 1;
+            runner.timer_start = posixtime(datetime('now'));
+
+            runner.play_call_count = runner.play_call_count + 1;
+
+            % 刺激音再生（プレイヤー音とは独立）
+            stop(runner.player_stim);
+            play(runner.player_stim);
+
+            fprintf('[%d回目の刺激音]\n', stage1_num);
+
+            % データ記録
+            tap_time = posixtime(datetime('now')) - runner.clock_start;
+            runner.stim_tap(end+1) = tap_time;
+            runner.full_stim_tap(end+1) = tap_time;
+
+            % 音声再生の安定化のため少し待機
+            pause(0.01);
         end
         
         if any(strcmp(keys, 'escape'))
             fprintf('実験が中断されました\n');
             return;
         end
+        
+        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)
+        pause(0.0001);
         
         % Stage1完了判定
         if stage1_num >= required_taps && player_taps >= required_taps
@@ -233,7 +240,8 @@ function [runner, success] = run_experiment_stage1(runner)
             return;
         end
         
-        pause(0.01);
+        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)  
+        pause(0.0001);
     end
 end
 
@@ -359,7 +367,8 @@ function [runner, success] = run_experiment_stage2(runner)
             end
         end
         
-        pause(0.01);
+        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)
+        pause(0.0001);
     end
 end
 
