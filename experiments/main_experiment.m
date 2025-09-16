@@ -1,5 +1,6 @@
 % グローバル変数宣言（スクリプトレベル）
 global experiment_key_buffer experiment_running
+global experiment_key_pressed experiment_last_key_time experiment_last_key_type
 
 % メイン実行
 run_cooperative_tapping_experiment();
@@ -9,8 +10,12 @@ function run_cooperative_tapping_experiment()
     
     % グローバル変数初期化
     global experiment_key_buffer experiment_running
+    global experiment_key_pressed experiment_last_key_time experiment_last_key_type
     experiment_key_buffer = {};
     experiment_running = true;
+    experiment_key_pressed = false;
+    experiment_last_key_time = 0;
+    experiment_last_key_type = '';
     
     fprintf('=== Python版協調タッピング実験 完全再現 ===\n');
     
@@ -77,13 +82,11 @@ function runner = initialize_experiment_runner()
     % モデル初期化
     runner.model = model_factory(model_type, config);
     
-    % 音声読み込み
+    % 音声読み込み（刺激音のみ）
     [runner.sound_stim, runner.fs_stim] = audioread(config.SOUND_STIM);
-    [runner.sound_player, runner.fs_player] = audioread(config.SOUND_PLAYER);
-    
-    % audioplayerオブジェクトを作成して滑らかな音声再生を実現
+
+    % audioplayerオブジェクトを作成（刺激音のみ）
     runner.player_stim = audioplayer(runner.sound_stim(:,1), runner.fs_stim);
-    runner.player_player = audioplayer(runner.sound_player(:,1), runner.fs_player);
     
     % 入力ウィンドウ作成（直接作成）
     runner.input_fig = figure('Name', 'Cooperative Tapping', 'NumberTitle', 'off', ...
@@ -179,10 +182,8 @@ function [runner, success] = run_experiment_stage1(runner)
             runner.full_player_tap(end+1) = tap_time;
             player_taps = player_taps + 1;
 
-            % プレイヤー音再生（刺激音と分離）
-            stop(runner.player_player);
-            play(runner.player_player);
-            fprintf('[%d回目のプレイヤータップ音]\n', player_taps);
+            % プレイヤータップ記録（音声再生なし）
+            fprintf('[%d回目のプレイヤータップ]\n', player_taps);
 
             if stage1_num >= required_taps && player_taps < required_taps
                 remaining = required_taps - player_taps;
@@ -218,8 +219,8 @@ function [runner, success] = run_experiment_stage1(runner)
             return;
         end
         
-        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)
-        pause(0.0001);
+        % CPU負荷軽減 (0.01ms休憩 - 最高精度維持)
+        pause(0.00001);
         
         % Stage1完了判定
         if stage1_num >= required_taps && player_taps >= required_taps
@@ -309,8 +310,7 @@ function [runner, success] = run_experiment_stage2(runner)
                         runner.player_tap(end+1) = final_time;
                         runner.full_player_tap(end+1) = final_time;
                         
-                        stop(runner.player_player);
-                        play(runner.player_player);
+                        % 最終タップ記録（音声再生なし）
                         fprintf('実験完了！お疲れ様でした\n');
                         
                         success = true;
@@ -340,9 +340,8 @@ function [runner, success] = run_experiment_stage2(runner)
                 runner.player_tap(end+1) = tap_time;
                 runner.full_player_tap(end+1) = tap_time;
                 
-                stop(runner.player_player);
-            play(runner.player_player);
-                fprintf('[%d回目のプレイヤータップ音]\n', turn);
+                % プレイヤータップ記録（音声再生なし）
+                fprintf('[%d回目のプレイヤータップ]\n', turn);
                 
                 pause(0.1);
                 
@@ -367,8 +366,8 @@ function [runner, success] = run_experiment_stage2(runner)
             end
         end
         
-        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)
-        pause(0.0001);
+        % CPU負荷軽減 (0.01ms休憩 - 最高精度維持)
+        pause(0.00001);
     end
 end
 
@@ -431,8 +430,12 @@ end
 
 % 必要なハンドラ関数
 function experiment_key_press_handler(~, event)
-    assignin('base', 'last_key_press', event.Key);
-    assignin('base', 'last_key_time', posixtime(datetime('now')));
+    % 最適化版キー入力ハンドラ（グローバル変数使用）
+    global experiment_key_pressed experiment_last_key_time experiment_last_key_type
+
+    experiment_key_pressed = true;
+    experiment_last_key_time = posixtime(datetime('now'));
+    experiment_last_key_type = event.Key;
 end
 
 function experiment_window_close_handler(~, ~)
@@ -440,17 +443,16 @@ function experiment_window_close_handler(~, ~)
 end
 
 function keys = get_all_recent_keys()
+    % 最適化版キー取得関数（グローバル変数使用）
+    global experiment_key_pressed experiment_last_key_type
+
     keys = {};
-    try
-        if evalin('base', 'exist(''last_key_press'', ''var'')')
-            last_key = evalin('base', 'last_key_press');
-            if ~isempty(last_key)
-                keys{end+1} = last_key;
-                assignin('base', 'last_key_press', '');
-            end
+    if experiment_key_pressed
+        if ~isempty(experiment_last_key_type)
+            keys{end+1} = experiment_last_key_type;
         end
-    catch
-        % エラー時は空を返す
+        experiment_key_pressed = false; % リセット
+        experiment_last_key_type = '';
     end
 end
 
@@ -473,12 +475,14 @@ end
 
 function cleanup_all_resources(runner)
     global experiment_running experiment_key_buffer
-    
+    global experiment_key_pressed experiment_last_key_time experiment_last_key_type
+
     experiment_running = false;
-    
+
     if isfield(runner, 'input_fig') && isvalid(runner.input_fig)
         delete(runner.input_fig);
     end
-    
+
     clear global experiment_key_buffer experiment_running;
+    clear global experiment_key_pressed experiment_last_key_time experiment_last_key_type;
 end

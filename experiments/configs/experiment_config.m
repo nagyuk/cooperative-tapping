@@ -14,8 +14,8 @@ function config = experiment_config()
     config.SCALE = 0.1;         % ランダム変動のスケール
     
     % 音声ファイルパス（experimentsディレクトリからの相対パス）
-    config.SOUND_STIM = '../assets/sounds/stim_beat.wav';
-    config.SOUND_PLAYER = '../assets/sounds/player_beat.wav';
+    config.SOUND_STIM = '../assets/sounds/stim_beat_optimized.wav';  % 最適化版（19%遅延短縮）
+    % config.SOUND_PLAYER = '../assets/sounds/player_beat.wav';  % 不要
     
     % データ保存パス
     config.DATA_DIR = '../data/raw';
