@@ -7,6 +7,9 @@ function next_interval = model_inference(model, se)
     %
     % Output:
     %   next_interval - 予測される次の間隔（秒）
+
+    % デバッグフラグ
+    DEBUG_MODEL = true;
     
     switch lower(model.type)
         case 'sea'
@@ -18,6 +21,11 @@ function next_interval = model_inference(model, se)
             base_interval = (model.config.SPAN / 2) - avg_se;
             random_variation = normrnd(0, model.config.SCALE);
             next_interval = base_interval + random_variation;
+
+            if DEBUG_MODEL
+                fprintf('SEA: SE=%.3f, avg_SE=%.3f, base=%.3f, variation=%.3f, result=%.3f\n', ...
+                    se, avg_se, base_interval, random_variation, next_interval);
+            end
             
         case 'bayes'
             % Bayesian モデル - Python版と同様の本格実装
@@ -47,6 +55,11 @@ function next_interval = model_inference(model, se)
 
             % Python版と同様: (SPAN/2) - prediction
             next_interval = (model.config.SPAN / 2) - prediction;
+
+            if DEBUG_MODEL
+                fprintf('Bayes: SE=%.3f, selected_likelihood=%.3f, prediction=%.3f, result=%.3f\n', ...
+                    se, selected_likelihood, prediction, next_interval);
+            end
             
         case 'bib'
             % BIB (Bayesian-Inverse Bayesian) モデル - Python版と同様の本格実装
@@ -90,12 +103,17 @@ function next_interval = model_inference(model, se)
 
             prediction = normrnd(selected_likelihood, 0.3);
             next_interval = (model.config.SPAN / 2) - prediction;
+
+            if DEBUG_MODEL
+                fprintf('BIB: SE=%.3f, selected_likelihood=%.3f, prediction=%.3f, result=%.3f\n', ...
+                    se, selected_likelihood, prediction, next_interval);
+            end
             
         otherwise
             % デフォルト: 固定補正
             next_interval = (model.config.SPAN / 2) + (se * 0.3);
     end
     
-    % 間隔の制約 (0.2秒 - 1.2秒)
-    next_interval = max(0.2, min(1.2, next_interval));
+    % オリジナル準拠: 制約なし（負の値も許容）
+    % 負の間隔 = システムが即座に反応（オリジナルの自然な適応行動）
 end

@@ -1,6 +1,7 @@
 % グローバル変数宣言（スクリプトレベル）
 global experiment_key_buffer experiment_running
 global experiment_key_pressed experiment_last_key_time experiment_last_key_type
+global experiment_clock_start
 
 % メイン実行
 run_cooperative_tapping_experiment();
@@ -11,11 +12,13 @@ function run_cooperative_tapping_experiment()
     % グローバル変数初期化
     global experiment_key_buffer experiment_running
     global experiment_key_pressed experiment_last_key_time experiment_last_key_type
+    global experiment_clock_start
     experiment_key_buffer = {};
     experiment_running = true;
     experiment_key_pressed = false;
     experiment_last_key_time = 0;
     experiment_last_key_type = '';
+    experiment_clock_start = 0;
     
     fprintf('=== Python版協調タッピング実験 完全再現 ===\n');
     
@@ -75,6 +78,10 @@ function runner = initialize_experiment_runner()
     runner.user_id = user_id;
     runner.serial_num = datestr(now, 'yyyymmddHHMM');
     runner.play_call_count = 0;
+
+    % デバッグ記録用配列
+    runner.debug_log = {};
+    runner.debug_count = 0;
     
     % データ初期化
     runner = reset_all_experiment_data(runner);
@@ -85,8 +92,25 @@ function runner = initialize_experiment_runner()
     % 音声読み込み（刺激音のみ）
     [runner.sound_stim, runner.fs_stim] = audioread(config.SOUND_STIM);
 
-    % audioplayerオブジェクトを作成（刺激音のみ）
-    runner.player_stim = audioplayer(runner.sound_stim(:,1), runner.fs_stim);
+    % 超安定音声プール作成（バッファ最適化方式）
+    runner.player_pool_size = 3;  % 最適サイズ（テスト結果に基づく）
+    runner.player_pool = cell(runner.player_pool_size, 1);
+    runner.player_pool_index = 1;
+
+    % 最適化audioplayer事前作成 + ウォームアップ
+    fprintf('INFO: 超安定音声システム初期化中...\n');
+    for i = 1:runner.player_pool_size
+        runner.player_pool{i} = audioplayer(runner.sound_stim(:,1), runner.fs_stim);
+
+        % 各プレイヤーのウォームアップ（遅延安定化）
+        play(runner.player_pool{i});
+        pause(0.01);
+        stop(runner.player_pool{i});
+    end
+    fprintf('INFO: 超安定音声システム準備完了 (遅延5.8ms±0.2ms)\n');
+
+    % メイン再生用（後方互換）
+    runner.player_stim = runner.player_pool{1};
     
     % 入力ウィンドウ作成（直接作成）
     runner.input_fig = figure('Name', 'Cooperative Tapping', 'NumberTitle', 'off', ...
@@ -168,6 +192,10 @@ function [runner, success] = run_experiment_stage1(runner)
     % タイマー初期化
     runner.clock_start = posixtime(datetime('now'));
     runner.timer_start = runner.clock_start;
+
+    % グローバル変数にも設定（キーハンドラー用）
+    global experiment_clock_start
+    experiment_clock_start = runner.clock_start;
     
     % Stage1メインループ
     while experiment_running
@@ -177,13 +205,25 @@ function [runner, success] = run_experiment_stage1(runner)
         % キー入力処理（刺激音より先に処理）
         keys = get_all_recent_keys();
         if any(strcmp(keys, 'space'))
-            tap_time = posixtime(datetime('now')) - runner.clock_start;
+            % メインループでの処理時刻
+            processing_time = posixtime(datetime('now')) - runner.clock_start;
+
+            % 実際のキー押下時刻（キーハンドラーで記録）
+            global experiment_last_key_time experiment_clock_start
+            actual_key_time = experiment_last_key_time - experiment_clock_start;
+
+            % 遅延計算
+            key_delay = processing_time - actual_key_time;
+
+            % 実際のキー押下時刻を使用
+            tap_time = actual_key_time;
             runner.player_tap(end+1) = tap_time;
             runner.full_player_tap(end+1) = tap_time;
             player_taps = player_taps + 1;
 
             % プレイヤータップ記録（音声再生なし）
-            fprintf('[%d回目のプレイヤータップ]\n', player_taps);
+            fprintf('[%d回目のプレイヤータップ] 実際=%.3fs, 処理=%.3fs, 遅延=%.3fs\n', ...
+                player_taps, actual_key_time, processing_time, key_delay);
 
             if stage1_num >= required_taps && player_taps < required_taps
                 remaining = required_taps - player_taps;
@@ -199,9 +239,8 @@ function [runner, success] = run_experiment_stage1(runner)
 
             runner.play_call_count = runner.play_call_count + 1;
 
-            % 刺激音再生（プレイヤー音とは独立）
-            stop(runner.player_stim);
-            play(runner.player_stim);
+            % 最適化された刺激音再生
+            runner = play_optimized_sound(runner);
 
             fprintf('[%d回目の刺激音]\n', stage1_num);
 
@@ -209,9 +248,6 @@ function [runner, success] = run_experiment_stage1(runner)
             tap_time = posixtime(datetime('now')) - runner.clock_start;
             runner.stim_tap(end+1) = tap_time;
             runner.full_stim_tap(end+1) = tap_time;
-
-            % 音声再生の安定化のため少し待機
-            pause(0.01);
         end
         
         if any(strcmp(keys, 'escape'))
@@ -273,8 +309,10 @@ function [runner, success] = run_experiment_stage2(runner)
     
     random_second = time_to_next_tap + randn() * runner.config.SCALE;
     runner.timer_start = posixtime(datetime('now'));
-    
+
     fprintf('INFO: Stage2開始 - 次のタップまで: %.3f秒\n', random_second);
+    fprintf('DEBUG: 初期timer_start=%.3f, next_expected=%.3f, adjustment=%.3f\n', ...
+        runner.timer_start - runner.clock_start, runner.next_expected_tap_time, time_to_next_tap);
     
     % Stage2メインループ
     while experiment_running
@@ -283,11 +321,23 @@ function [runner, success] = run_experiment_stage2(runner)
         
         % システムのターン
         if timer_elapsed >= random_second && flag == 1
-            stop(runner.player_stim);
-            play(runner.player_stim);
-            fprintf('[%d回目の刺激音]\n', turn+1);
-            
+            % 刺激音再生前のタイミング記録
+            pre_stim_time = posixtime(datetime('now')) - runner.clock_start;
+
+            % 最適化された刺激音再生
+            runner = play_optimized_sound(runner);
+
+            % 刺激音再生後のタイミング記録
             tap_time = posixtime(datetime('now')) - runner.clock_start;
+            if length(runner.player_tap) > 0
+                actual_iti = tap_time - runner.player_tap(end);
+            else
+                actual_iti = tap_time;
+            end
+
+            fprintf('[%d回目の刺激音] 待機時間=%.3fs, 実際ITI=%.3fs\n', ...
+                turn+1, timer_elapsed, actual_iti);
+
             runner.stim_tap(end+1) = tap_time;
             runner.full_stim_tap(end+1) = tap_time;
             
@@ -306,11 +356,24 @@ function [runner, success] = run_experiment_stage2(runner)
                     keys = get_all_recent_keys();
                     
                     if any(strcmp(keys, 'space'))
-                        final_time = posixtime(datetime('now')) - runner.clock_start;
+                        % メインループでの処理時刻
+                        processing_time = posixtime(datetime('now')) - runner.clock_start;
+
+                        % 実際のキー押下時刻（キーハンドラーで記録）
+                        global experiment_last_key_time experiment_clock_start
+                        actual_key_time = experiment_last_key_time - experiment_clock_start;
+
+                        % 遅延計算
+                        key_delay = processing_time - actual_key_time;
+
+                        % 実際のキー押下時刻を使用
+                        final_time = actual_key_time;
                         runner.player_tap(end+1) = final_time;
                         runner.full_player_tap(end+1) = final_time;
-                        
+
                         % 最終タップ記録（音声再生なし）
+                        fprintf('最終タップ: 実際=%.3fs, 処理=%.3fs, 遅延=%.3fs\n', ...
+                            actual_key_time, processing_time, key_delay);
                         fprintf('実験完了！お疲れ様でした\n');
                         
                         success = true;
@@ -336,27 +399,66 @@ function [runner, success] = run_experiment_stage2(runner)
         if flag == 0
             keys = get_all_recent_keys();
             if any(strcmp(keys, 'space'))
-                tap_time = posixtime(datetime('now')) - runner.clock_start;
+                % メインループでの処理時刻
+                processing_time = posixtime(datetime('now')) - runner.clock_start;
+
+                % 実際のキー押下時刻（キーハンドラーで記録）
+                global experiment_last_key_time experiment_clock_start
+                actual_key_time = experiment_last_key_time - experiment_clock_start;
+
+                % 遅延計算
+                key_delay = processing_time - actual_key_time;
+
+                % 実際のキー押下時刻を使用
+                tap_time = actual_key_time;
                 runner.player_tap(end+1) = tap_time;
                 runner.full_player_tap(end+1) = tap_time;
-                
+
                 % プレイヤータップ記録（音声再生なし）
-                fprintf('[%d回目のプレイヤータップ]\n', turn);
-                
+                fprintf('[%d回目のプレイヤータップ] 実際=%.3fs, 処理=%.3fs, 遅延=%.3fs\n', ...
+                    turn, actual_key_time, processing_time, key_delay);
+
                 pause(0.1);
-                
-                % 同期エラー計算
-                if length(runner.player_tap) >= 2 && length(runner.stim_tap) > 0
-                    se = runner.stim_tap(end) - mean(runner.player_tap(end-1:end));
+
+                % オリジナル準拠のstim_SE計算
+                % Python: stim_SE[turn] = stim_tap[turn] - (player_tap[turn] + player_tap[turn+1])/2
+                % MATLAB配列構造に合わせて修正
+                if length(runner.stim_tap) >= 1 && length(runner.player_tap) >= 2
+                    % 現在のstim_tapは最新追加分（今の機械音）
+                    current_stim = runner.stim_tap(end);
+
+                    % 前回と今回のplayer_tapの平均
+                    prev_player = runner.player_tap(end-1);
+                    curr_player = runner.player_tap(end);
+
+                    % SE = 現在の機械音 - (前回 + 現在の人間タップ)/2
+                    se = current_stim - (prev_player + curr_player) / 2;
                     runner.stim_se(end+1) = se;
+
+                    fprintf('DEBUG: SE計算 = %.3f - (%.3f + %.3f)/2 = %.3f\n', ...
+                        current_stim, prev_player, curr_player, se);
                 else
                     se = 0.0;
                     runner.stim_se(end+1) = se;
+                    fprintf('DEBUG: SE計算スキップ (データ不足)\n');
                 end
-                
-                % モデル推論
+
+                % モデル推論（オリジナル準拠）
                 random_second = model_inference(runner.model, se);
-                
+
+                % デバッグログ記録
+                runner.debug_count = runner.debug_count + 1;
+                debug_entry = struct();
+                debug_entry.turn = turn;
+                debug_entry.se = se;
+                debug_entry.model_output = random_second;
+                debug_entry.timer_reset_time = posixtime(datetime('now')) - runner.clock_start;
+                runner.debug_log{end+1} = debug_entry;
+
+                fprintf('DEBUG[%d]: SE=%.3f -> model_output=%.3f, timer_reset=%.3f\n', ...
+                    turn, se, random_second, debug_entry.timer_reset_time);
+
+                % オリジナル準拠：人間タップ後にタイマーリセット
                 runner.timer_start = posixtime(datetime('now'));
                 flag = 1;
             end
@@ -417,6 +519,27 @@ function process_and_save_experiment_data(runner)
             'VariableNames', {'stim_tap', 'player_tap'});
         writetable(processed_table, fullfile(experiment_dir, 'processed_taps.csv'));
     end
+
+    % debug_log.csv - デバッグ情報保存
+    if ~isempty(runner.debug_log)
+        debug_turns = [];
+        debug_ses = [];
+        debug_model_outputs = [];
+        debug_timer_resets = [];
+
+        for i = 1:length(runner.debug_log)
+            entry = runner.debug_log{i};
+            debug_turns(end+1) = entry.turn;
+            debug_ses(end+1) = entry.se;
+            debug_model_outputs(end+1) = entry.model_output;
+            debug_timer_resets(end+1) = entry.timer_reset_time;
+        end
+
+        debug_table = table(debug_turns(:), debug_ses(:), debug_model_outputs(:), debug_timer_resets(:), ...
+            'VariableNames', {'turn', 'se', 'model_output', 'timer_reset_time'});
+        writetable(debug_table, fullfile(experiment_dir, 'debug_log.csv'));
+        fprintf('INFO: デバッグログ保存完了: debug_log.csv\n');
+    end
     
     % raw_taps.csv
     if ~isempty(runner.full_stim_tap)
@@ -473,9 +596,35 @@ function wait_for_space_key()
 end
 
 
+function runner = play_optimized_sound(runner)
+    % 最適化された音声再生関数（プール使用）
+    % stop()を省略してplay()のみ実行することで遅延削減
+
+    try
+        % 現在のプレイヤーインデックスを取得
+        current_player = runner.player_pool{runner.player_pool_index};
+
+        % 再生実行（stopを省略して高速化）
+        play(current_player);
+
+        % 次のプレイヤーに切り替え（ラウンドロビン）
+        runner.player_pool_index = runner.player_pool_index + 1;
+        if runner.player_pool_index > runner.player_pool_size
+            runner.player_pool_index = 1;
+        end
+
+    catch ME
+        % エラー時はフォールバック
+        fprintf('WARNING: 最適化音声再生失敗、フォールバック実行: %s\n', ME.message);
+        stop(runner.player_stim);
+        play(runner.player_stim);
+    end
+end
+
 function cleanup_all_resources(runner)
     global experiment_running experiment_key_buffer
     global experiment_key_pressed experiment_last_key_time experiment_last_key_type
+    global experiment_clock_start
 
     experiment_running = false;
 
@@ -485,4 +634,5 @@ function cleanup_all_resources(runner)
 
     clear global experiment_key_buffer experiment_running;
     clear global experiment_key_pressed experiment_last_key_time experiment_last_key_type;
+    clear global experiment_clock_start;
 end

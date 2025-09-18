@@ -157,9 +157,7 @@ The `Config` class centralizes all parameters:
 - キー入力遅延の大幅削減
 
 **💡 パフォーマンス解析で特定された課題**:
-- ITI遅延(1.555秒 vs 期待1.0秒)の根本原因は`model_inference`ロジック
-- Stage2開始時の0.518秒待機による体感への影響
-- 今後のモデル再設計で対処予定
+- ITI遅延(1.555秒 vs 期待1.0秒)の根本原因は謎である
 
 **🛠 残存ファイル**:
 - `timing_test.m`: システム検証用
