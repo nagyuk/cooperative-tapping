@@ -176,143 +176,179 @@ function success = execute_full_experiment(runner)
 end
 
 function [runner, success] = run_experiment_stage1(runner)
-    % Python版run_stage1()完全再現
+    % Stage1: 同期タッピング段階（論文準拠の正しい設計）
+    % 目的: 被験者に正確な基準周期（SPAN=2.0秒）を学習させる
     global experiment_running
-    
+
     success = false;
-    stage1_num = 0;
-    player_taps = 0;
+    stage1_completed_taps = 0;
     required_taps = runner.config.STAGE1;
-    
-    fprintf('\nStage 1: メトロノームリズムに合わせてタップしてください\n');
-    
-    % Spaceキー待機
+
+    fprintf('\n=== Stage 1: 同期タッピング段階 ===\n');
+    fprintf('刺激音と同時にスペースキーを押してください\n');
+    fprintf('目標: %d回の同期タップで正確な%.1f秒周期を学習\n', required_taps, runner.config.SPAN);
+
+    % 開始待機
+    fprintf('準備ができたらスペースキーを押してください...\n');
     wait_for_space_key();
-    
+
     % タイマー初期化
     runner.clock_start = posixtime(datetime('now'));
-    runner.timer_start = runner.clock_start;
 
-    % グローバル変数にも設定（キーハンドラー用）
+    % グローバル変数設定
     global experiment_clock_start
     experiment_clock_start = runner.clock_start;
-    
-    % Stage1メインループ
-    while experiment_running
-        current_time = posixtime(datetime('now'));
-        timer_elapsed = current_time - runner.timer_start;
-        
-        % キー入力処理（刺激音より先に処理）
-        keys = get_all_recent_keys();
-        if any(strcmp(keys, 'space'))
-            % メインループでの処理時刻
-            processing_time = posixtime(datetime('now')) - runner.clock_start;
 
-            % 実際のキー押下時刻（キーハンドラーで記録）
-            global experiment_last_key_time experiment_clock_start
-            actual_key_time = experiment_last_key_time - experiment_clock_start;
+    % Stage1同期タッピングループ
+    while experiment_running && stage1_completed_taps < required_taps
 
-            % 遅延計算
-            key_delay = processing_time - actual_key_time;
+        % 刺激音再生
+        runner = play_optimized_sound(runner);
+        stim_time = posixtime(datetime('now')) - runner.clock_start;
+        runner.stim_tap(end+1) = stim_time;
+        runner.full_stim_tap(end+1) = stim_time;
 
-            % 実際のキー押下時刻を使用
-            tap_time = actual_key_time;
-            runner.player_tap(end+1) = tap_time;
-            runner.full_player_tap(end+1) = tap_time;
-            player_taps = player_taps + 1;
+        fprintf('[%d/%d] 刺激音再生 - 同時にタップしてください\n', ...
+            stage1_completed_taps + 1, required_taps);
 
-            % プレイヤータップ記録（音声再生なし）
-            fprintf('[%d回目のプレイヤータップ] 実際=%.3fs, 処理=%.3fs, 遅延=%.3fs\n', ...
-                player_taps, actual_key_time, processing_time, key_delay);
+        % 同期タップ待機（刺激音から±500ms以内のタップを受け付け）
+        sync_window_start = posixtime(datetime('now'));
+        tap_detected = false;
 
-            if stage1_num >= required_taps && player_taps < required_taps
-                remaining = required_taps - player_taps;
-                fprintf('リズムに合わせてタップしてください。あと %d 回\n', remaining);
+        while posixtime(datetime('now')) - sync_window_start < 1.0 % 1秒待機
+            keys = get_all_recent_keys();
+            if any(strcmp(keys, 'space'))
+                % 同期タップ検出
+                global experiment_last_key_time experiment_clock_start
+                actual_key_time = experiment_last_key_time - experiment_clock_start;
+
+                % 同期精度計算（刺激音からの遅延）
+                sync_error = actual_key_time - stim_time;
+
+                % タップ記録
+                runner.player_tap(end+1) = actual_key_time;
+                runner.full_player_tap(end+1) = actual_key_time;
+
+                fprintf('   → 同期タップ検出: 遅延=%.3fs\n', sync_error);
+
+                stage1_completed_taps = stage1_completed_taps + 1;
+                tap_detected = true;
+                break;
+            end
+
+            if any(strcmp(keys, 'escape'))
+                fprintf('実験が中断されました\n');
+                return;
+            end
+
+            pause(0.01); % 10ms間隔でチェック
+        end
+
+        if ~tap_detected
+            fprintf('   → タップが検出されませんでした。次の刺激音を待ちます。\n');
+        end
+
+        % 次の刺激音まで正確にSPAN秒待機
+        if stage1_completed_taps < required_taps
+            while posixtime(datetime('now')) - sync_window_start < runner.config.SPAN
+                % Escapeキーチェック
+                keys = get_all_recent_keys();
+                if any(strcmp(keys, 'escape'))
+                    fprintf('実験が中断されました\n');
+                    return;
+                end
+                pause(0.01);
             end
         end
-
-        % システム音再生 (Stage1はSPAN間隔) - キー処理の後に実行
-        if timer_elapsed >= runner.config.SPAN && stage1_num < required_taps
-            current_timer_val = timer_elapsed;
-            stage1_num = stage1_num + 1;
-            runner.timer_start = posixtime(datetime('now'));
-
-            runner.play_call_count = runner.play_call_count + 1;
-
-            % 最適化された刺激音再生
-            runner = play_optimized_sound(runner);
-
-            fprintf('[%d回目の刺激音]\n', stage1_num);
-
-            % データ記録
-            tap_time = posixtime(datetime('now')) - runner.clock_start;
-            runner.stim_tap(end+1) = tap_time;
-            runner.full_stim_tap(end+1) = tap_time;
-        end
-        
-        if any(strcmp(keys, 'escape'))
-            fprintf('実験が中断されました\n');
-            return;
-        end
-        
-        % CPU負荷軽減 (0.01ms休憩 - 最高精度維持)
-        pause(0.00001);
-        
-        % Stage1完了判定
-        if stage1_num >= required_taps && player_taps >= required_taps
-            fprintf('INFO: Stage1完了。Stage2へ移行します\n');
-            
-            if length(runner.stim_tap) > 0
-                runner.last_stim_tap_time = runner.stim_tap(end);
-            else
-                runner.last_stim_tap_time = posixtime(datetime('now')) - runner.clock_start;
-            end
-            
-            fprintf('INFO: Stage1終了 - 刺激タップ: %d回, プレイヤータップ: %d回\n', ...
-                length(runner.stim_tap), length(runner.player_tap));
-            
-            runner.next_expected_tap_time = runner.last_stim_tap_time + (runner.config.SPAN / 2);
-            
-            success = true;
-            return;
-        end
-        
-        % CPU負荷軽減 (0.1ms休憩 - 超高精度維持)  
-        pause(0.0001);
     end
+
+    % Stage1完了処理
+    fprintf('\n=== Stage1 同期タッピング完了 ===\n');
+    fprintf('完了した同期タップ: %d回\n', stage1_completed_taps);
+
+    % 同期精度の分析
+    if length(runner.stim_tap) > 0 && length(runner.player_tap) > 0
+        sync_errors = [];
+        min_length = min(length(runner.stim_tap), length(runner.player_tap));
+
+        for i = 1:min_length
+            sync_error = runner.player_tap(i) - runner.stim_tap(i);
+            sync_errors(end+1) = sync_error;
+        end
+
+        if ~isempty(sync_errors)
+            mean_sync_error = mean(sync_errors);
+            std_sync_error = std(sync_errors);
+            fprintf('同期精度 - 平均遅延: %.3fs, 標準偏差: %.3fs\n', ...
+                mean_sync_error, std_sync_error);
+        end
+    end
+
+    % Stage2への準備
+    if length(runner.stim_tap) > 0
+        runner.last_stim_tap_time = runner.stim_tap(end);
+    else
+        runner.last_stim_tap_time = posixtime(datetime('now')) - runner.clock_start;
+    end
+
+    % Stage2は被験者が刺激音の中間でタップ（SPAN/2間隔）
+    runner.next_expected_tap_time = runner.last_stim_tap_time + (runner.config.SPAN / 2);
+
+    fprintf('Stage2開始準備完了 - 次は %.1f秒間隔の交互タッピングです\n', runner.config.SPAN / 2);
+
+    success = true;
 end
 
 function [runner, success] = run_experiment_stage2(runner)
-    % Python版run_stage2()完全再現
+    % Stage2: 協調交互タッピング段階
+    % 目的: Stage1で学習した基準周期を基にした協調的なタイミング調整
     global experiment_running
-    
+
     success = false;
     flag = 1; % 1: Stimulus turn, 0: Player turn
     turn = 0;
-    
-    fprintf('\nStage 2: 交互タッピング開始\n');
-    fprintf('刺激音に合わせてタップしてください\n');
-    
-    % Stage1からの連続性計算
+
+    fprintf('\n=== Stage 2: 協調交互タッピング段階 ===\n');
+    fprintf('刺激音の中間地点（%.1f秒後）にタップしてください\n', runner.config.SPAN / 2);
+    fprintf('システムが刺激音のタイミングを動的に調整します\n\n');
+
+    % Stage1で学習した基準からStage2開始
+    fprintf('Stage1で学習した基準周期: %.1f秒\n', runner.config.SPAN);
+    fprintf('Stage2目標間隔: %.1f秒（交互タッピング）\n', runner.config.SPAN / 2);
+
+    % 開始準備
+    fprintf('準備ができたらスペースキーを押してください...\n');
+    wait_for_space_key();
+
+    % Stage2のタイマー初期化
     current_time = posixtime(datetime('now')) - runner.clock_start;
-    time_to_next_tap = runner.next_expected_tap_time - current_time;
-    
-    if time_to_next_tap <= 0
-        elapsed_spans = abs(time_to_next_tap) / (runner.config.SPAN / 2);
-        adjustment = (1 - (elapsed_spans - floor(elapsed_spans))) * (runner.config.SPAN / 2);
-        time_to_next_tap = adjustment;
+
+    % Stage1の最後からの適切な間隔計算
+    if runner.next_expected_tap_time > current_time
+        time_to_next_tap = runner.next_expected_tap_time - current_time;
+    else
+        % Stage1から時間が経過している場合の調整
+        elapsed_time = current_time - runner.last_stim_tap_time;
+        target_interval = runner.config.SPAN / 2;
+        cycles_passed = floor(elapsed_time / target_interval);
+        time_to_next_tap = target_interval - mod(elapsed_time, target_interval);
+
+        fprintf('Stage1からの経過時間調整: %.3f秒経過, 次まで%.3f秒\n', ...
+            elapsed_time, time_to_next_tap);
     end
-    
+
+    % 最小間隔保証
     if time_to_next_tap < 0.3
-        time_to_next_tap = 0.3;
+        time_to_next_tap = runner.config.SPAN / 2; % 基本間隔にリセット
     end
-    
-    random_second = time_to_next_tap + randn() * runner.config.SCALE;
+
+    % 初期値はランダム性なし（Stage1の基準を尊重）
+    random_second = time_to_next_tap;
     runner.timer_start = posixtime(datetime('now'));
 
-    fprintf('INFO: Stage2開始 - 次のタップまで: %.3f秒\n', random_second);
-    fprintf('DEBUG: 初期timer_start=%.3f, next_expected=%.3f, adjustment=%.3f\n', ...
-        runner.timer_start - runner.clock_start, runner.next_expected_tap_time, time_to_next_tap);
+    fprintf('INFO: Stage2協調交互タッピング開始\n');
+    fprintf('次のシステム刺激音まで: %.3f秒\n', random_second);
+    fprintf('その中間地点（%.3f秒後）でタップしてください\n\n', random_second / 2);
     
     % Stage2メインループ
     while experiment_running
@@ -474,25 +510,56 @@ function [runner, success] = run_experiment_stage2(runner)
 end
 
 function process_and_save_experiment_data(runner)
-    % データ処理・保存
-    fprintf('INFO: データ分析開始 - 刺激: %d回, プレイヤー: %d回\n', ...
-        length(runner.stim_tap), length(runner.player_tap));
-    
-    % データ長調整
-    stim_len = length(runner.stim_tap);
-    player_len = length(runner.player_tap);
-    
-    if stim_len ~= player_len
-        min_len = min(stim_len, player_len);
-        runner.stim_tap = runner.stim_tap(1:min_len);
-        runner.player_tap = runner.player_tap(1:min_len);
+    % データ処理・保存（Stage1/Stage2分離対応）
+    fprintf('INFO: データ分析開始 - 全刺激: %d回, 全プレイヤー: %d回\n', ...
+        length(runner.full_stim_tap), length(runner.full_player_tap));
+
+    % Stage1とStage2のデータ分離
+    stage1_count = runner.config.STAGE1;
+
+    % Stage1データ（同期タッピング - モデル学習には使用しない）
+    if length(runner.full_stim_tap) >= stage1_count
+        stage1_stim = runner.full_stim_tap(1:stage1_count);
+        stage1_player = runner.full_player_tap(1:min(stage1_count, length(runner.full_player_tap)));
+
+        fprintf('INFO: Stage1データ - 刺激: %d回, プレイヤー: %d回（同期タッピング）\n', ...
+            length(stage1_stim), length(stage1_player));
+    else
+        stage1_stim = [];
+        stage1_player = [];
     end
-    
-    % バッファ除外
-    buffer_start = runner.config.BUFFER;
-    if length(runner.stim_tap) > buffer_start
-        runner.stim_tap = runner.stim_tap(buffer_start+1:end);
-        runner.player_tap = runner.player_tap(buffer_start+1:end);
+
+    % Stage2データ（協調交互タッピング - モデル学習用）
+    if length(runner.full_stim_tap) > stage1_count
+        stage2_stim = runner.full_stim_tap(stage1_count+1:end);
+        stage2_player_start = min(stage1_count+1, length(runner.full_player_tap));
+        stage2_player = runner.full_player_tap(stage2_player_start:end);
+
+        fprintf('INFO: Stage2データ - 刺激: %d回, プレイヤー: %d回（協調交互タッピング）\n', ...
+            length(stage2_stim), length(stage2_player));
+    else
+        stage2_stim = [];
+        stage2_player = [];
+    end
+
+    % Stage2データの長さ調整（分析用）
+    if ~isempty(stage2_stim) && ~isempty(stage2_player)
+        min_len = min(length(stage2_stim), length(stage2_player));
+        runner.stim_tap = stage2_stim(1:min_len);
+        runner.player_tap = stage2_player(1:min_len);
+
+        % バッファ除外（Stage2のみ）
+        buffer_start = runner.config.BUFFER;
+        if length(runner.stim_tap) > buffer_start
+            runner.stim_tap = runner.stim_tap(buffer_start+1:end);
+            runner.player_tap = runner.player_tap(buffer_start+1:end);
+        end
+
+        fprintf('INFO: 分析用Stage2データ（バッファ除外後）- %d回\n', length(runner.stim_tap));
+    else
+        runner.stim_tap = [];
+        runner.player_tap = [];
+        fprintf('WARNING: Stage2データが不足しています\n');
     end
     
     % 保存
@@ -513,11 +580,32 @@ function process_and_save_experiment_data(runner)
         mkdir(experiment_dir);
     end
     
-    % processed_taps.csv
+    % processed_taps.csv（Stage2データのみ - モデル学習用）
     if ~isempty(runner.stim_tap)
         processed_table = table(runner.stim_tap(:), runner.player_tap(:), ...
             'VariableNames', {'stim_tap', 'player_tap'});
         writetable(processed_table, fullfile(experiment_dir, 'processed_taps.csv'));
+        fprintf('INFO: Stage2分析データ保存完了: processed_taps.csv\n');
+    end
+
+    % stage1_synchronous_taps.csv（Stage1同期タッピングデータ）
+    if ~isempty(stage1_stim) && ~isempty(stage1_player)
+        % 長さ調整
+        min_len_stage1 = min(length(stage1_stim), length(stage1_player));
+        stage1_table = table(stage1_stim(1:min_len_stage1)', stage1_player(1:min_len_stage1)', ...
+            'VariableNames', {'stim_tap', 'player_tap'});
+        writetable(stage1_table, fullfile(experiment_dir, 'stage1_synchronous_taps.csv'));
+        fprintf('INFO: Stage1同期データ保存完了: stage1_synchronous_taps.csv\n');
+    end
+
+    % stage2_alternating_taps.csv（Stage2交互タッピング生データ）
+    if ~isempty(stage2_stim) && ~isempty(stage2_player)
+        % 長さ調整
+        min_len_stage2 = min(length(stage2_stim), length(stage2_player));
+        stage2_table = table(stage2_stim(1:min_len_stage2)', stage2_player(1:min_len_stage2)', ...
+            'VariableNames', {'stim_tap', 'player_tap'});
+        writetable(stage2_table, fullfile(experiment_dir, 'stage2_alternating_taps.csv'));
+        fprintf('INFO: Stage2生データ保存完了: stage2_alternating_taps.csv\n');
     end
 
     % debug_log.csv - デバッグ情報保存
