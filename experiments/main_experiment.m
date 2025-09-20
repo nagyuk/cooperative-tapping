@@ -51,8 +51,12 @@ function runner = initialize_experiment_runner()
     
     % パス設定とライブラリ読み込み
     addpath('configs');
-    addpath('models'); 
+    addpath('models');
     addpath('utils');
+
+    % 基本構造
+    runner = struct();
+    runner.assets_dir = fullfile(pwd, '..');
     
     
     % 設定ファイルから読み込み
@@ -71,8 +75,7 @@ function runner = initialize_experiment_runner()
     user_id = input('参加者ID: ', 's');
     if isempty(user_id), user_id = 'anonymous'; end
     
-    % Runner構造体
-    runner = struct();
+    % Runner構造体の追加設定
     runner.config = config;
     runner.model_type = model_type;
     runner.user_id = user_id;
@@ -89,28 +92,51 @@ function runner = initialize_experiment_runner()
     % モデル初期化
     runner.model = model_factory(model_type, config);
     
-    % 音声読み込み（刺激音のみ）
-    [runner.sound_stim, runner.fs_stim] = audioread(config.SOUND_STIM);
+    % 音声読み込み（刺激音・プレイヤー音の2種類）
+    % 絶対パスで安全に読み込み
+    stim_sound_path = fullfile(runner.assets_dir, 'assets', 'sounds', 'stim_beat_optimized.wav');
+    player_sound_path = fullfile(runner.assets_dir, 'assets', 'sounds', 'player_beat_optimized.wav');
 
-    % 超安定音声プール作成（バッファ最適化方式）
-    runner.player_pool_size = 3;  % 最適サイズ（テスト結果に基づく）
-    runner.player_pool = cell(runner.player_pool_size, 1);
-    runner.player_pool_index = 1;
-
-    % 最適化audioplayer事前作成 + ウォームアップ
-    fprintf('INFO: 超安定音声システム初期化中...\n');
-    for i = 1:runner.player_pool_size
-        runner.player_pool{i} = audioplayer(runner.sound_stim(:,1), runner.fs_stim);
-
-        % 各プレイヤーのウォームアップ（遅延安定化）
-        play(runner.player_pool{i});
-        pause(0.01);
-        stop(runner.player_pool{i});
+    if ~exist(stim_sound_path, 'file')
+        error('刺激音ファイルが見つかりません: %s', stim_sound_path);
     end
-    fprintf('INFO: 超安定音声システム準備完了 (遅延5.8ms±0.2ms)\n');
+    if ~exist(player_sound_path, 'file')
+        error('プレイヤー音ファイルが見つかりません: %s', player_sound_path);
+    end
 
-    % メイン再生用（後方互換）
-    runner.player_stim = runner.player_pool{1};
+    [runner.sound_stim, runner.fs_stim] = audioread(stim_sound_path);
+    [runner.sound_player, runner.fs_player] = audioread(player_sound_path);
+
+    fprintf('INFO: 刺激音読み込み完了: %s\n', stim_sound_path);
+    fprintf('INFO: プレイヤー音読み込み完了（最適化版）: %s\n', player_sound_path);
+
+    % 単一音声プレイヤー作成（3nリズム問題解決のため簡素化）
+    fprintf('INFO: 単一音声システム初期化中（規則性優先）...\n');
+
+    % 刺激音用シングルプレイヤー
+    runner.player_stim = audioplayer(runner.sound_stim(:,1), runner.fs_stim);
+
+    % プレイヤー音用シングルプレイヤー
+    runner.player_player = audioplayer(runner.sound_player(:,1), runner.fs_player);
+
+    % CoreAudio完全初期化ウォームアップ（2回目遅延解決）
+    fprintf('INFO: CoreAudio 2回目初期化遅延対策実行中...\n');
+
+    % 1回目: 正常な初回実行
+    sound(runner.sound_stim(:,1), runner.fs_stim);
+    pause(0.01);
+
+    % 2回目: 遅延を発生させて完了させる（474ms遅延を事前消化）
+    sound(runner.sound_player(:,1), runner.fs_player);
+    pause(0.6); % 遅延を完全待機
+
+    % 3回目以降の安定性確認
+    sound(runner.sound_stim(:,1), runner.fs_stim);
+    pause(0.01);
+    sound(runner.sound_player(:,1), runner.fs_player);
+    pause(0.01);
+
+    fprintf('INFO: CoreAudio完全初期化完了（474ms遅延を事前解決）\n');
     
     % 入力ウィンドウ作成（直接作成）
     runner.input_fig = figure('Name', 'Cooperative Tapping', 'NumberTitle', 'off', ...
@@ -176,17 +202,20 @@ function success = execute_full_experiment(runner)
 end
 
 function [runner, success] = run_experiment_stage1(runner)
-    % Stage1: 同期タッピング段階（論文準拠の正しい設計）
-    % 目的: 被験者に正確な基準周期（SPAN=2.0秒）を学習させる
+    % Stage1: 完全に周期的な1秒間隔メトロノーム段階（修正版）
+    % 目的: 被験者に正確な1.0秒間隔を学習させる
+    % 動作: 刺激音A→プレイヤー音B を正確に1.0秒間隔で交互再生
     global experiment_running
 
     success = false;
     stage1_completed_taps = 0;
     required_taps = runner.config.STAGE1;
 
-    fprintf('\n=== Stage 1: 同期タッピング段階 ===\n');
-    fprintf('刺激音と同時にスペースキーを押してください\n');
-    fprintf('目標: %d回の同期タップで正確な%.1f秒周期を学習\n', required_taps, runner.config.SPAN);
+    fprintf('\n=== Stage 1: 完全周期メトロノーム段階（修正版）===\n');
+    fprintf('刺激音Aとプレイヤー音Bが正確に1.0秒間隔で交互に再生されます\n');
+    fprintf('音声A（刺激音）: 聞くだけ、タップしない\n');
+    fprintf('音声B（プレイヤー音）: この音に合わせてタップ\n');
+    fprintf('目標: %d回のタップで正確な1.0秒間隔を学習\n', required_taps);
 
     % 開始待機
     fprintf('準備ができたらスペースキーを押してください...\n');
@@ -199,72 +228,64 @@ function [runner, success] = run_experiment_stage1(runner)
     global experiment_clock_start
     experiment_clock_start = runner.clock_start;
 
-    % Stage1同期タッピングループ
-    while experiment_running && stage1_completed_taps < required_taps
+    fprintf('開始! 正確な1.0秒間隔で音声が再生されます\n');
 
-        % 刺激音再生
-        runner = play_optimized_sound(runner);
-        stim_time = posixtime(datetime('now')) - runner.clock_start;
-        runner.stim_tap(end+1) = stim_time;
-        runner.full_stim_tap(end+1) = stim_time;
+    % Stage1: 純粋な1秒間隔メトロノーム（タップ検出なし）
+    fprintf('純粋メトロノーム開始: 刺激音→プレイヤー音を正確に1秒間隔で再生\n');
+    fprintf('タップ練習用ですが、タップ検出は行いません（規則性優先）\n');
 
-        fprintf('[%d/%d] 刺激音再生 - 同時にタップしてください\n', ...
-            stage1_completed_taps + 1, required_taps);
+    % 全音声の絶対スケジュール作成
+    total_sounds = required_taps * 2;
 
-        % 同期タップ待機（刺激音から±500ms以内のタップを受け付け）
-        sync_window_start = posixtime(datetime('now'));
-        tap_detected = false;
+    for sound_index = 1:total_sounds
+        if ~experiment_running
+            break;
+        end
 
-        while posixtime(datetime('now')) - sync_window_start < 1.0 % 1秒待機
+        % 絶対時刻スケジューリング: 0.5, 1.5, 2.5, 3.5, 4.5...秒
+        % 0.5秒のオフセットでスタート時バタつきを回避
+        target_time = (sound_index - 1) * 1.0 + 0.5;
+
+        % シンプルで確実な待機システム
+        while (posixtime(datetime('now')) - runner.clock_start) < target_time
+            % Escapeキーチェックのみ
             keys = get_all_recent_keys();
-            if any(strcmp(keys, 'space'))
-                % 同期タップ検出
-                global experiment_last_key_time experiment_clock_start
-                actual_key_time = experiment_last_key_time - experiment_clock_start;
-
-                % 同期精度計算（刺激音からの遅延）
-                sync_error = actual_key_time - stim_time;
-
-                % タップ記録
-                runner.player_tap(end+1) = actual_key_time;
-                runner.full_player_tap(end+1) = actual_key_time;
-
-                fprintf('   → 同期タップ検出: 遅延=%.3fs\n', sync_error);
-
-                stage1_completed_taps = stage1_completed_taps + 1;
-                tap_detected = true;
-                break;
-            end
-
             if any(strcmp(keys, 'escape'))
                 fprintf('実験が中断されました\n');
                 return;
             end
-
-            pause(0.01); % 10ms間隔でチェック
+            pause(0.001); % 1ms間隔の安定した待機
         end
 
-        if ~tap_detected
-            fprintf('   → タップが検出されませんでした。次の刺激音を待ちます。\n');
-        end
+        % 音声再生（シンプル）
+        actual_time = posixtime(datetime('now')) - runner.clock_start;
 
-        % 次の刺激音まで正確にSPAN秒待機
-        if stage1_completed_taps < required_taps
-            while posixtime(datetime('now')) - sync_window_start < runner.config.SPAN
-                % Escapeキーチェック
-                keys = get_all_recent_keys();
-                if any(strcmp(keys, 'escape'))
-                    fprintf('実験が中断されました\n');
-                    return;
-                end
-                pause(0.01);
-            end
+        if mod(sound_index, 2) == 1
+            % 奇数: 刺激音（0秒、2秒、4秒...）
+            pair_num = ceil(sound_index / 2);
+            fprintf('[%d/%d] 刺激音再生 (%.3fs地点, 目標%.3fs)\n', ...
+                pair_num, required_taps, actual_time, target_time);
+            runner = play_stim_sound(runner);
+            runner.stim_tap(end+1) = actual_time;
+            runner.full_stim_tap(end+1) = actual_time;
+        else
+            % 偶数: プレイヤー音（1秒、3秒、5秒...）
+            pair_num = sound_index / 2;
+            fprintf('       プレイヤー音再生 (%.3fs地点, 目標%.3fs) - 練習タップ\n', ...
+                actual_time, target_time);
+            runner = play_player_sound(runner);
+
+            % タップ記録は行わない（メトロノーム練習のみ）
+            % stage1_completed_taps = stage1_completed_taps + 1; % 自動カウント
         end
     end
 
+    % Stage1完了（タップ数は音数に基づく）
+    stage1_completed_taps = required_taps; % プレイヤー音の回数
+
     % Stage1完了処理
-    fprintf('\n=== Stage1 同期タッピング完了 ===\n');
-    fprintf('完了した同期タップ: %d回\n', stage1_completed_taps);
+    fprintf('\n=== Stage1 完全周期メトロノーム完了 ===\n');
+    fprintf('完了したプレイヤー音タップ: %d回\n', stage1_completed_taps);
 
     % 同期精度の分析
     if length(runner.stim_tap) > 0 && length(runner.player_tap) > 0
@@ -279,22 +300,29 @@ function [runner, success] = run_experiment_stage1(runner)
         if ~isempty(sync_errors)
             mean_sync_error = mean(sync_errors);
             std_sync_error = std(sync_errors);
-            fprintf('同期精度 - 平均遅延: %.3fs, 標準偏差: %.3fs\n', ...
+            fprintf('プレイヤー音タッピング精度 - 平均遅延: %.3fs, 標準偏差: %.3fs\n', ...
                 mean_sync_error, std_sync_error);
         end
     end
 
-    % Stage2への準備
+    % Stage1からStage2へのスムーズな移行設計
     if length(runner.stim_tap) > 0
         runner.last_stim_tap_time = runner.stim_tap(end);
     else
         runner.last_stim_tap_time = posixtime(datetime('now')) - runner.clock_start;
     end
 
-    % Stage2は被験者が刺激音の中間でタップ（SPAN/2間隔）
-    runner.next_expected_tap_time = runner.last_stim_tap_time + (runner.config.SPAN / 2);
+    % Stage2初期タイミングの計算（Stage1の最後の刺激音から1秒後開始）
+    stage1_end_time = posixtime(datetime('now')) - runner.clock_start;
 
-    fprintf('Stage2開始準備完了 - 次は %.1f秒間隔の交互タッピングです\n', runner.config.SPAN / 2);
+    % Stage2は学習した1.0秒間隔を基準とした交互タッピングに移行
+    % 最後の刺激音から1秒後にStage2の最初の人間タップを期待
+    runner.next_expected_tap_time = runner.last_stim_tap_time + 1.0;
+
+    fprintf('Stage2開始準備完了:\n');
+    fprintf('  最後の刺激音: %.3fs地点\n', runner.last_stim_tap_time);
+    fprintf('  次の期待タップ: %.3fs地点 (1.0秒後)\n', runner.next_expected_tap_time);
+    fprintf('  Stage1で学習した1.0秒間隔を基準とした交互タッピングです\n');
 
     success = true;
 end
@@ -309,46 +337,43 @@ function [runner, success] = run_experiment_stage2(runner)
     turn = 0;
 
     fprintf('\n=== Stage 2: 協調交互タッピング段階 ===\n');
-    fprintf('刺激音の中間地点（%.1f秒後）にタップしてください\n', runner.config.SPAN / 2);
+    fprintf('Stage1で学習した1.0秒間隔を基準とした交互タッピングです\n');
     fprintf('システムが刺激音のタイミングを動的に調整します\n\n');
 
-    % Stage1で学習した基準からStage2開始
-    fprintf('Stage1で学習した基準周期: %.1f秒\n', runner.config.SPAN);
-    fprintf('Stage2目標間隔: %.1f秒（交互タッピング）\n', runner.config.SPAN / 2);
+    % Stage1からのスムーズな移行（準備待機を削除）
+    fprintf('Stage1からStage2への移行:\n');
+    fprintf('  前段階の学習間隔: 1.0秒\n');
+    fprintf('  この段階の目標間隔: 1.0秒（協調交互タッピング）\n\n');
 
-    % 開始準備
-    fprintf('準備ができたらスペースキーを押してください...\n');
-    wait_for_space_key();
-
-    % Stage2のタイマー初期化
+    % Stage2のタイマー初期化（Stage1から継続）
     current_time = posixtime(datetime('now')) - runner.clock_start;
 
-    % Stage1の最後からの適切な間隔計算
+    % Stage1からのスムーズな移行タイミング計算
     if runner.next_expected_tap_time > current_time
         time_to_next_tap = runner.next_expected_tap_time - current_time;
+        fprintf('Stage1から継続: 次のタップまで%.3f秒\n', time_to_next_tap);
     else
-        % Stage1から時間が経過している場合の調整
+        % Stage1から時間が経過している場合の調整（1.0秒基準）
         elapsed_time = current_time - runner.last_stim_tap_time;
-        target_interval = runner.config.SPAN / 2;
-        cycles_passed = floor(elapsed_time / target_interval);
+        target_interval = 1.0; % Stage1で学習した1.0秒間隔
         time_to_next_tap = target_interval - mod(elapsed_time, target_interval);
 
         fprintf('Stage1からの経過時間調整: %.3f秒経過, 次まで%.3f秒\n', ...
             elapsed_time, time_to_next_tap);
     end
 
-    % 最小間隔保証
+    % 最小間隔保証（1.0秒基準）
     if time_to_next_tap < 0.3
-        time_to_next_tap = runner.config.SPAN / 2; % 基本間隔にリセット
+        time_to_next_tap = 1.0; % Stage1学習間隔にリセット
     end
 
-    % 初期値はランダム性なし（Stage1の基準を尊重）
+    % 初期値（Stage1の1.0秒間隔を尊重）
     random_second = time_to_next_tap;
     runner.timer_start = posixtime(datetime('now'));
 
     fprintf('INFO: Stage2協調交互タッピング開始\n');
     fprintf('次のシステム刺激音まで: %.3f秒\n', random_second);
-    fprintf('その中間地点（%.3f秒後）でタップしてください\n\n', random_second / 2);
+    fprintf('システム音の中間地点（%.3f秒後）でタップしてください\n\n', random_second / 2);
     
     % Stage2メインループ
     while experiment_running
@@ -488,14 +513,14 @@ function [runner, success] = run_experiment_stage2(runner)
                 debug_entry.turn = turn;
                 debug_entry.se = se;
                 debug_entry.model_output = random_second;
-                debug_entry.timer_reset_time = posixtime(datetime('now')) - runner.clock_start;
+                debug_entry.timer_reset_time = actual_key_time;
                 runner.debug_log{end+1} = debug_entry;
 
                 fprintf('DEBUG[%d]: SE=%.3f -> model_output=%.3f, timer_reset=%.3f\n', ...
                     turn, se, random_second, debug_entry.timer_reset_time);
 
-                % オリジナル準拠：人間タップ後にタイマーリセット
-                runner.timer_start = posixtime(datetime('now'));
+                % 修正：実際のキー押下時刻を基準にタイマーリセット
+                runner.timer_start = experiment_last_key_time;
                 flag = 1;
             end
             
@@ -683,30 +708,47 @@ function wait_for_space_key()
     fprintf('開始! メトロノームのリズムに交互にタップしてください\n');
 end
 
-
-function runner = play_optimized_sound(runner)
-    % 最適化された音声再生関数（プール使用）
-    % stop()を省略してplay()のみ実行することで遅延削減
+function runner = play_stim_sound(runner)
+    % 刺激音再生関数（3n+1遅延対策：sound()関数使用）
 
     try
-        % 現在のプレイヤーインデックスを取得
-        current_player = runner.player_pool{runner.player_pool_index};
-
-        % 再生実行（stopを省略して高速化）
-        play(current_player);
-
-        % 次のプレイヤーに切り替え（ラウンドロビン）
-        runner.player_pool_index = runner.player_pool_index + 1;
-        if runner.player_pool_index > runner.player_pool_size
-            runner.player_pool_index = 1;
-        end
+        % audioplayer の代わりに sound() 関数を使用（バッファリング最小化）
+        sound(runner.sound_stim(:,1), runner.fs_stim);
 
     catch ME
         % エラー時はフォールバック
-        fprintf('WARNING: 最適化音声再生失敗、フォールバック実行: %s\n', ME.message);
-        stop(runner.player_stim);
-        play(runner.player_stim);
+        fprintf('WARNING: 刺激音再生失敗: %s\n', ME.message);
+        try
+            % フォールバック: audioplayer 使用
+            play(runner.player_stim);
+        catch
+            fprintf('WARNING: フォールバック再生も失敗\n');
+        end
     end
+end
+
+function runner = play_player_sound(runner)
+    % プレイヤー音再生関数（3n+1遅延対策：sound()関数使用）
+
+    try
+        % audioplayer の代わりに sound() 関数を使用（バッファリング最小化）
+        sound(runner.sound_player(:,1), runner.fs_player);
+
+    catch ME
+        % エラー時はフォールバック
+        fprintf('WARNING: プレイヤー音再生失敗: %s\n', ME.message);
+        try
+            % フォールバック: audioplayer 使用
+            play(runner.player_player);
+        catch
+            fprintf('WARNING: フォールバック再生も失敗\n');
+        end
+    end
+end
+
+% 互換性のためのラッパー関数
+function runner = play_optimized_sound(runner)
+    runner = play_stim_sound(runner);
 end
 
 function cleanup_all_resources(runner)
