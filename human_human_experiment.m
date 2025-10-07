@@ -226,11 +226,7 @@ function success = execute_human_human_experiment(runner)
             return;
         end
 
-        % Stage間休憩
-        fprintf('\nStage間休憩 (3秒)...\n');
-        pause(3);
-
-        % Stage2: 協調フェーズ
+        % Stage2: 協調フェーズ（Stage間休憩なし）
         fprintf('\n=== Stage 2: 協調タッピングフェーズ ===\n');
         [runner, stage2_ok] = run_stage2_cooperative(runner);
         if ~stage2_ok || ~experiment_running
@@ -253,10 +249,11 @@ function display_experiment_instructions()
     fprintf('           実験説明\n');
     fprintf('========================================\n');
     fprintf('\n【Stage 1】メトロノームフェーズ\n');
-    fprintf('  - 1秒間隔のメトロノーム音が再生されます\n');
-    fprintf('  - 両プレイヤーは音に合わせてタップ練習\n');
-    fprintf('  - Player 1: S キー\n');
-    fprintf('  - Player 2: C キー\n');
+    fprintf('  - Player1音(左耳)とPlayer2音(右耳)が1秒間隔で交互に再生\n');
+    fprintf('  - 各プレイヤーは自分の音に合わせてタップ練習\n');
+    fprintf('  - Player 1: 左耳の音 → S キーでタップ\n');
+    fprintf('  - Player 2: 右耳の音 → C キーでタップ\n');
+    fprintf('  - 正確な1秒間隔のリズムを学習\n');
     fprintf('\n【Stage 2】協調タッピングフェーズ\n');
     fprintf('  - Player 1から開始\n');
     fprintf('  - 相手がタップすると自分の耳に音が聞こえます\n');
@@ -271,16 +268,17 @@ function display_experiment_instructions()
 end
 
 function [runner, success] = run_stage1_metronome(runner)
-    % Stage1: メトロノームフェーズ
+    % Stage1: 完全周期メトロノーム段階
+    % 刺激音（Player1左）とプレイヤー音（Player2右）を1秒間隔で交互再生
     global experiment_running
     global experiment_clock_start
 
     success = false;
 
-    fprintf('メトロノーム開始 (%d beats, %.1fs間隔)\n', ...
-        runner.stage1_beats, runner.target_interval);
-    fprintf('両プレイヤーは音に合わせてタップ練習してください\n');
-    fprintf('Player 1: Sキー, Player 2: Cキー\n');
+    fprintf('完全周期メトロノーム開始: Player1音(左) と Player2音(右) を1秒間隔で交互再生\n');
+    fprintf('Player1: 左耳の音に合わせてSキーでタップ練習\n');
+    fprintf('Player2: 右耳の音に合わせてCキーでタップ練習\n');
+    fprintf('目標: %d回ずつタップ（合計%d音）\n', runner.stage1_beats, runner.stage1_beats * 2);
 
     % タイマー初期化
     runner.clock_start = posixtime(datetime('now'));
@@ -289,14 +287,19 @@ function [runner, success] = run_stage1_metronome(runner)
     fprintf('スペースキーで開始...\n');
     wait_for_space_key();
 
-    % メトロノーム再生
-    for beat = 1:runner.stage1_beats
+    fprintf('開始! 正確な1.0秒間隔で音声が交互に再生されます\n');
+
+    % 全音声の絶対スケジュール作成（Player1音とPlayer2音を交互に）
+    total_sounds = runner.stage1_beats * 2;
+
+    for sound_index = 1:total_sounds
         if ~experiment_running
             return;
         end
 
-        % 目標時刻
-        target_time = (beat - 1) * runner.target_interval + 0.5;
+        % 絶対時刻スケジューリング: 0.5, 1.5, 2.5, 3.5, 4.5...秒
+        % 0.5秒のオフセットでスタート時バタつきを回避
+        target_time = (sound_index - 1) * 1.0 + 0.5;
 
         % 待機
         while (posixtime(datetime('now')) - experiment_clock_start) < target_time
@@ -304,48 +307,46 @@ function [runner, success] = run_stage1_metronome(runner)
                 fprintf('実験中断\n');
                 return;
             end
-            pause(0.001);
+            pause(0.001); % 1ms精度
         end
 
-        % メトロノーム再生
+        % 音声再生（Player1とPlayer2を交互に）
         actual_time = posixtime(datetime('now')) - experiment_clock_start;
-        PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.metro_buffer);
-        PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+
+        if mod(sound_index, 2) == 1
+            % 奇数: Player1音（左チャンネル）0.5秒、2.5秒、4.5秒...
+            pair_num = ceil(sound_index / 2);
+            fprintf('[%d/%d] Player1音(左) 再生 (%.3fs地点, 目標%.3fs)\n', ...
+                pair_num, runner.stage1_beats, actual_time, target_time);
+
+            % Player1音再生（左チャンネルのみ）
+            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_buffer);
+            PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+
+            runner.data.stage1_player1_taps(end+1) = actual_time;
+        else
+            % 偶数: Player2音（右チャンネル）1.5秒、3.5秒、5.5秒...
+            pair_num = sound_index / 2;
+            fprintf('       Player2音(右) 再生 (%.3fs地点, 目標%.3fs)\n', ...
+                actual_time, target_time);
+
+            % Player2音再生（右チャンネルのみ）
+            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_buffer);
+            PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+
+            runner.data.stage1_player2_taps(end+1) = actual_time;
+        end
 
         runner.data.stage1_metro_times(end+1) = actual_time;
-
-        fprintf('♪ Beat %d/%d: %.3fs\n', beat, runner.stage1_beats, actual_time);
-
-        % キータップ記録
-        runner = check_and_record_taps_stage1(runner);
     end
 
-    fprintf('Stage 1完了\n');
+    fprintf('\n=== Stage1 完全周期メトロノーム完了 ===\n');
+    fprintf('Player1音: %d回, Player2音: %d回\n', ...
+        length(runner.data.stage1_player1_taps), length(runner.data.stage1_player2_taps));
+
     success = true;
 end
 
-function runner = check_and_record_taps_stage1(runner)
-    % Stage1でのキータップ記録
-    global player1_key_pressed player2_key_pressed
-    global player1_last_press_time player2_last_press_time
-    global experiment_clock_start
-
-    current_time = posixtime(datetime('now')) - experiment_clock_start;
-
-    % Player 1タップ記録
-    if player1_key_pressed && (current_time - player1_last_press_time) > 0.05
-        runner.data.stage1_player1_taps(end+1) = current_time;
-        player1_last_press_time = current_time;
-        fprintf('  → P1 tap: %.3fs\n', current_time);
-    end
-
-    % Player 2タップ記録
-    if player2_key_pressed && (current_time - player2_last_press_time) > 0.05
-        runner.data.stage1_player2_taps(end+1) = current_time;
-        player2_last_press_time = current_time;
-        fprintf('  → P2 tap: %.3fs\n', current_time);
-    end
-end
 
 function [runner, success] = run_stage2_cooperative(runner)
     % Stage2: 協調タッピングフェーズ
@@ -479,23 +480,28 @@ function analyze_and_display_results(runner)
     fprintf('========================================\n');
 
     % Stage 1分析
-    fprintf('\n【Stage 1 - メトロノーム】\n');
-    fprintf('  メトロノームビート数: %d\n', length(runner.data.stage1_metro_times));
+    fprintf('\n【Stage 1 - メトロノーム（交互音声）】\n');
+    fprintf('  総音声数: %d\n', length(runner.data.stage1_metro_times));
+    fprintf('  Player1音: %d回\n', length(runner.data.stage1_player1_taps));
+    fprintf('  Player2音: %d回\n', length(runner.data.stage1_player2_taps));
 
-    if length(runner.data.stage1_player1_taps) >= 2
-        p1_intervals = diff(runner.data.stage1_player1_taps);
-        fprintf('  Player 1: %d taps, 平均間隔 %.3fs, SD %.1fms\n', ...
-            length(runner.data.stage1_player1_taps), mean(p1_intervals), std(p1_intervals)*1000);
-    else
-        fprintf('  Player 1: %d taps (不十分)\n', length(runner.data.stage1_player1_taps));
+    % 全体の間隔分析
+    if length(runner.data.stage1_metro_times) >= 2
+        all_intervals = diff(runner.data.stage1_metro_times);
+        fprintf('  全体平均間隔: %.3fs (目標1.0s)\n', mean(all_intervals));
+        fprintf('  標準偏差: %.1fms\n', std(all_intervals)*1000);
     end
 
+    % Player1音の間隔（2秒間隔のはず）
+    if length(runner.data.stage1_player1_taps) >= 2
+        p1_intervals = diff(runner.data.stage1_player1_taps);
+        fprintf('  Player1音間隔: 平均 %.3fs (目標2.0s)\n', mean(p1_intervals));
+    end
+
+    % Player2音の間隔（2秒間隔のはず）
     if length(runner.data.stage1_player2_taps) >= 2
         p2_intervals = diff(runner.data.stage1_player2_taps);
-        fprintf('  Player 2: %d taps, 平均間隔 %.3fs, SD %.1fms\n', ...
-            length(runner.data.stage1_player2_taps), mean(p2_intervals), std(p2_intervals)*1000);
-    else
-        fprintf('  Player 2: %d taps (不十分)\n', length(runner.data.stage1_player2_taps));
+        fprintf('  Player2音間隔: 平均 %.3fs (目標2.0s)\n', mean(p2_intervals));
     end
 
     % Stage 2分析
