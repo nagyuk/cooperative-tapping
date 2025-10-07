@@ -274,18 +274,22 @@ function runner = play_sound_preview(runner)
 
     % Player1の音を再生（出力1/2のみ）
     fprintf('Player1の音を再生します（出力1/2）\n');
+    runner = update_window_display(runner, 'sound_check_player1');
     PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage2_buffer);
     PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
-    pause(1.0);
+    pause(1.5);
 
     % Player2の音を再生（出力3/4のみ）
     fprintf('Player2の音を再生します（出力3/4）\n');
+    runner = update_window_display(runner, 'sound_check_player2');
     PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage2_buffer);
     PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
-    pause(1.0);
+    pause(1.5);
 
     % 両方の音を交互に再生（Stage1の練習）
     fprintf('\n交互再生のデモンストレーション\n');
+    runner = update_window_display(runner, 'sound_check_demo');
+
     for i = 1:2
         fprintf('  Player1音\n');
         PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage1_buffer);
@@ -299,6 +303,7 @@ function runner = play_sound_preview(runner)
     end
 
     fprintf('\n音確認完了。準備ができたらスペースキーを押してください\n');
+    runner = update_window_display(runner, 'sound_check_complete');
     wait_for_space_key();
 end
 
@@ -771,6 +776,56 @@ function runner = update_window_display(runner, mode)
                 'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', [1.0, 0.8, 0.3]);
             text(0.5, 0.2, '1秒間隔を維持してください', ...
                 'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+
+        case 'sound_check_player1'
+            % 音確認: Player1
+            text(0.5, 0.7, '音確認', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', 'white', 'FontWeight', 'bold');
+            text(0.5, 0.5, 'Player 1 (Sキー)', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 22, 'Color', [0.3, 0.8, 1.0], 'FontWeight', 'bold');
+            text(0.5, 0.35, 'この音に合わせて', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', 'white');
+            text(0.5, 0.25, 'タップを行ってください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', 'white');
+
+        case 'sound_check_player2'
+            % 音確認: Player2
+            text(0.5, 0.7, '音確認', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', 'white', 'FontWeight', 'bold');
+            text(0.5, 0.5, 'Player 2 (Cキー)', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 22, 'Color', [1.0, 0.8, 0.3], 'FontWeight', 'bold');
+            text(0.5, 0.35, 'この音に合わせて', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', 'white');
+            text(0.5, 0.25, 'タップを行ってください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', 'white');
+
+        case 'sound_check_demo'
+            % 音確認: デモンストレーション
+            text(0.5, 0.7, '交互再生デモンストレーション', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 22, 'Color', 'white', 'FontWeight', 'bold');
+            text(0.5, 0.5, '両プレイヤーの音が', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', 'white');
+            text(0.5, 0.42, '1秒間隔で交互に再生されます', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', 'white');
+            text(0.5, 0.3, 'このリズムを覚えてください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', [0.2, 1.0, 0.2]);
+
+        case 'sound_check_complete'
+            % 音確認完了
+            text(0.5, 0.6, '音確認完了', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', [0.2, 1.0, 0.2], 'FontWeight', 'bold');
+            text(0.5, 0.45, '各プレイヤーの音を確認しました', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+            text(0.5, 0.25, 'スペースキーを押して', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', [0.2, 1.0, 0.2]);
+            text(0.5, 0.17, 'Stage 1を開始してください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', [0.2, 1.0, 0.2]);
     end
 
     drawnow;
