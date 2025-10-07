@@ -6,6 +6,7 @@ global experiment_running
 global experiment_clock_start
 global player1_key_pressed player2_key_pressed
 global player1_last_press_time player2_last_press_time
+global space_key_pressed
 
 % メイン実行
 run_human_human_experiment();
@@ -18,6 +19,7 @@ function run_human_human_experiment()
     global experiment_clock_start
     global player1_key_pressed player2_key_pressed
     global player1_last_press_time player2_last_press_time
+    global space_key_pressed
 
     experiment_running = true;
     experiment_clock_start = 0;
@@ -25,6 +27,7 @@ function run_human_human_experiment()
     player2_key_pressed = false;
     player1_last_press_time = 0;
     player2_last_press_time = 0;
+    space_key_pressed = false;
 
     fprintf('=== 人間同士協調タッピング実験 (PsychPortAudio版) ===\n');
 
@@ -562,7 +565,7 @@ end
 function human_human_key_press_handler(~, event)
     % キー押下ハンドラ
     global player1_key_pressed player2_key_pressed
-    global experiment_running
+    global experiment_running space_key_pressed
 
     key = event.Key;
 
@@ -570,6 +573,8 @@ function human_human_key_press_handler(~, event)
         player1_key_pressed = true;
     elseif strcmp(key, 'c')
         player2_key_pressed = true;
+    elseif strcmp(key, 'space')
+        space_key_pressed = true;
     elseif strcmp(key, 'escape')
         experiment_running = false;
     end
@@ -578,6 +583,7 @@ end
 function human_human_key_release_handler(~, event)
     % キーリリースハンドラ
     global player1_key_pressed player2_key_pressed
+    global space_key_pressed
 
     key = event.Key;
 
@@ -585,6 +591,8 @@ function human_human_key_release_handler(~, event)
         player1_key_pressed = false;
     elseif strcmp(key, 'c')
         player2_key_pressed = false;
+    elseif strcmp(key, 'space')
+        space_key_pressed = false;
     end
 end
 
@@ -599,27 +607,29 @@ end
 % === ユーティリティ関数 ===
 
 function wait_for_space_key()
-    % スペースキー待機
+    % スペースキー待機（Figureキーイベント使用）
+    global space_key_pressed experiment_running
 
-    while true
-        pause(0.1);
-        [keyIsDown, ~, keyCode] = KbCheck;
-        if keyIsDown
-            if keyCode(KbName('space'))
-                break;
-            end
-        end
+    % フラグリセット
+    space_key_pressed = false;
+
+    % スペースキーが押されるまで待機
+    while ~space_key_pressed && experiment_running
+        pause(0.05);
+        drawnow; % イベント処理を強制実行
     end
+
+    % フラグリセット
+    space_key_pressed = false;
 end
 
 function is_escape = check_escape_key()
-    % Escapeキーチェック
+    % Escapeキーチェック（グローバル変数から判定）
     global experiment_running
 
-    [keyIsDown, ~, keyCode] = KbCheck;
-    is_escape = keyIsDown && keyCode(KbName('ESCAPE'));
+    % experiment_runningがfalseの場合はEscapeが押された
+    is_escape = ~experiment_running;
 
-    if is_escape
-        experiment_running = false;
-    end
+    % イベント処理を確実に実行
+    drawnow;
 end
