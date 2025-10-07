@@ -218,11 +218,8 @@ function success = execute_human_human_experiment(runner)
             return;
         end
 
-        % Stage2: 協調フェーズ（Stage間休憩なし）
+        % Stage2: 協調フェーズ（直接移行）
         fprintf('\n=== Stage 2: 協調タッピングフェーズ ===\n');
-        runner = update_window_display(runner, 'stage2_ready');
-        wait_for_space_key();
-
         [runner, stage2_ok] = run_stage2_cooperative(runner);
         if ~stage2_ok || ~experiment_running
             return;
