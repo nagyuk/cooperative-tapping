@@ -176,25 +176,36 @@ function audio = initialize_stereo_audio_system()
         fprintf('  出力チャンネル数: 4\n');
         fprintf('  出力遅延: %.3f ms\n', status.PredictedLatency * 1000);
 
-        % メトロノーム音バッファ (全チャンネルに出力 - Stage1用)
+        % メトロノーム音バッファ (全チャンネルに出力 - 未使用)
         % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
         metro_4ch = [sound_data, sound_data, sound_data, sound_data]';
         audio.metro_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, metro_4ch);
 
-        % Player 1刺激音バッファ (出力1/2のみ)
-        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 0, 0]
-        p1_4ch = [sound_data, sound_data, zeros(size(sound_data)), zeros(size(sound_data))]';
-        audio.player1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_4ch);
+        % Stage1用: Player1音（全プレイヤーが聞く）
+        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
+        p1_stage1_4ch = [sound_data, sound_data, sound_data, sound_data]';
+        audio.player1_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage1_4ch);
 
-        % Player 2刺激音バッファ (出力3/4のみ)
+        % Stage1用: Player2音（全プレイヤーが聞く）
+        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
+        p2_stage1_4ch = [sound_data, sound_data, sound_data, sound_data]';
+        audio.player2_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage1_4ch);
+
+        % Stage2用: Player1刺激音バッファ (出力1/2のみ - Player1だけが聞く)
+        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 0, 0]
+        p1_stage2_4ch = [sound_data, sound_data, zeros(size(sound_data)), zeros(size(sound_data))]';
+        audio.player1_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage2_4ch);
+
+        % Stage2用: Player2刺激音バッファ (出力3/4のみ - Player2だけが聞く)
         % [Ch1, Ch2, Ch3, Ch4] = [0, 0, 音, 音]
-        p2_4ch = [zeros(size(sound_data)), zeros(size(sound_data)), sound_data, sound_data]';
-        audio.player2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_4ch);
+        p2_stage2_4ch = [zeros(size(sound_data)), zeros(size(sound_data)), sound_data, sound_data]';
+        audio.player2_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage2_4ch);
 
         fprintf('音声バッファ作成完了:\n');
-        fprintf('  メトロノーム: 全チャンネル(1/2/3/4)\n');
-        fprintf('  Player1音: 出力1/2のみ\n');
-        fprintf('  Player2音: 出力3/4のみ\n');
+        fprintf('  Stage1 Player1音: 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage1 Player2音: 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage2 Player1音: 出力1/2のみ\n');
+        fprintf('  Stage2 Player2音: 出力3/4のみ\n');
 
     catch ME
         fprintf('❌ PsychPortAudio初期化エラー: %s\n', ME.message);
@@ -254,6 +265,43 @@ function display_experiment_instructions(runner)
     wait_for_space_key();
 end
 
+function runner = play_sound_preview(runner)
+    % Stage1開始前に各プレイヤーに自分の音を聞かせる
+
+    fprintf('\n=== 音確認 ===\n');
+    fprintf('これから各プレイヤーに自分の音を聞かせます\n');
+    fprintf('どの音に合わせてタップするかを確認してください\n\n');
+
+    % Player1の音を再生（出力1/2のみ）
+    fprintf('Player1の音を再生します（出力1/2）\n');
+    PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage2_buffer);
+    PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+    pause(1.0);
+
+    % Player2の音を再生（出力3/4のみ）
+    fprintf('Player2の音を再生します（出力3/4）\n');
+    PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage2_buffer);
+    PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+    pause(1.0);
+
+    % 両方の音を交互に再生（Stage1の練習）
+    fprintf('\n交互再生のデモンストレーション\n');
+    for i = 1:2
+        fprintf('  Player1音\n');
+        PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage1_buffer);
+        PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+        pause(1.0);
+
+        fprintf('  Player2音\n');
+        PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage1_buffer);
+        PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
+        pause(1.0);
+    end
+
+    fprintf('\n音確認完了。準備ができたらスペースキーを押してください\n');
+    wait_for_space_key();
+end
+
 function [runner, success] = run_stage1_metronome(runner)
     % Stage1: 完全周期メトロノーム段階
     % 両プレイヤーが両方の音を聞いて、決まったタイミングを学習
@@ -262,17 +310,20 @@ function [runner, success] = run_stage1_metronome(runner)
 
     success = false;
 
+    % 音確認: 各プレイヤーに自分の音を聞かせる
+    runner = play_sound_preview(runner);
+
     % ウィンドウ表示更新
     runner = update_window_display(runner, 'stage1_running');
 
-    fprintf('Stage1開始: 両プレイヤーが両方の音（左と右）を聞いて1秒間隔を学習\n');
+    fprintf('Stage1開始: 両プレイヤーが両方の音を聞いて1秒間隔を学習\n');
 
-    % タイマー初期化
-    runner.clock_start = posixtime(datetime('now'));
-    experiment_clock_start = runner.clock_start;
+    % タイマー初期化（グローバルに設定）
+    experiment_clock_start = posixtime(datetime('now'));
+    runner.clock_start = experiment_clock_start;
 
     % 全音声の絶対スケジュール作成
-    % Player1音とPlayer2音を交互に再生するが、両プレイヤーが両方聞く
+    % Player1音とPlayer2音を交互に再生、両プレイヤーが両方聞く
     total_sounds = runner.stage1_beats * 2;
 
     for sound_index = 1:total_sounds
@@ -292,25 +343,27 @@ function [runner, success] = run_stage1_metronome(runner)
             pause(0.001);
         end
 
-        % 音声再生
+        % 音声再生（実際の時刻を記録）
         actual_time = posixtime(datetime('now')) - experiment_clock_start;
 
         if mod(sound_index, 2) == 1
-            % 奇数: Player1音（左チャンネル）- 両プレイヤーが聞く
+            % 奇数: Player1音 - 両プレイヤーが聞く
             pair_num = ceil(sound_index / 2);
-            fprintf('[%d/%d] Player1音(左) %.3fs\n', ...
-                pair_num, runner.stage1_beats, actual_time);
+            fprintf('[%d/%d] Player1音 %.3fs (目標%.3fs)\n', ...
+                pair_num, runner.stage1_beats, actual_time, target_time);
 
-            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_buffer);
+            % Stage1用バッファ（全チャンネル）
+            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage1_buffer);
             PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
 
             runner.data.stage1_player1_taps(end+1) = actual_time;
         else
-            % 偶数: Player2音（右チャンネル）- 両プレイヤーが聞く
+            % 偶数: Player2音 - 両プレイヤーが聞く
             pair_num = sound_index / 2;
-            fprintf('       Player2音(右) %.3fs\n', actual_time);
+            fprintf('       Player2音 %.3fs (目標%.3fs)\n', actual_time, target_time);
 
-            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_buffer);
+            % Stage1用バッファ（全チャンネル）
+            PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage1_buffer);
             PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
 
             runner.data.stage1_player2_taps(end+1) = actual_time;
@@ -379,11 +432,11 @@ function [runner, success] = run_stage2_cooperative(runner)
 
             % 相手に刺激音送信
             if tapping_player == 1
-                % Player 1がタップ → Player 2の右耳に音
-                PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_buffer);
+                % Player 1がタップ → Player 2の出力3/4に音
+                PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage2_buffer);
             else
-                % Player 2がタップ → Player 1の左耳に音
-                PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_buffer);
+                % Player 2がタップ → Player 1の出力1/2に音
+                PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage2_buffer);
             end
             PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
 
