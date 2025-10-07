@@ -101,26 +101,15 @@ function runner = initialize_human_human_runner()
     runner.input_fig = figure('Name', 'Human-Human Cooperative Tapping', ...
         'NumberTitle', 'off', ...
         'MenuBar', 'none', 'ToolBar', 'none', ...
-        'Position', [100, 100, 600, 400], ...
+        'Position', [100, 100, 800, 600], ...
         'KeyPressFcn', @human_human_key_press_handler, ...
         'KeyReleaseFcn', @human_human_key_release_handler, ...
         'CloseRequestFcn', @human_human_window_close_handler, ...
         'Color', [0.2, 0.2, 0.2]);
 
-    % 表示テキスト
-    axes('Position', [0, 0, 1, 1], 'Visible', 'off');
-    text(0.5, 0.8, '人間同士協調タッピング実験', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 18, 'Color', 'white', 'FontWeight', 'bold');
-    text(0.5, 0.6, 'Player 1: S キー (左耳に音)', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14, 'Color', [0.3, 0.8, 1.0]);
-    text(0.5, 0.5, 'Player 2: C キー (右耳に音)', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 14, 'Color', [1.0, 0.8, 0.3]);
-    text(0.5, 0.3, 'Escape: 実験中止', ...
-        'HorizontalAlignment', 'center', ...
-        'FontSize', 12, 'Color', [0.8, 0.8, 0.8]);
+    % 初期表示
+    runner.window_axes = axes('Position', [0, 0, 1, 1], 'Visible', 'off');
+    runner = update_window_display(runner, 'init');
 
     figure(runner.input_fig);
 
@@ -217,10 +206,13 @@ function success = execute_human_human_experiment(runner)
 
     try
         % 実験説明
-        display_experiment_instructions();
+        display_experiment_instructions(runner);
 
         % Stage1: メトロノームフェーズ
         fprintf('\n=== Stage 1: メトロノームフェーズ ===\n');
+        runner = update_window_display(runner, 'stage1_ready');
+        wait_for_space_key();
+
         [runner, stage1_ok] = run_stage1_metronome(runner);
         if ~stage1_ok || ~experiment_running
             return;
@@ -228,6 +220,9 @@ function success = execute_human_human_experiment(runner)
 
         % Stage2: 協調フェーズ（Stage間休憩なし）
         fprintf('\n=== Stage 2: 協調タッピングフェーズ ===\n');
+        runner = update_window_display(runner, 'stage2_ready');
+        wait_for_space_key();
+
         [runner, stage2_ok] = run_stage2_cooperative(runner);
         if ~stage2_ok || ~experiment_running
             return;
@@ -244,52 +239,38 @@ function success = execute_human_human_experiment(runner)
     end
 end
 
-function display_experiment_instructions()
+function display_experiment_instructions(runner)
+    % ウィンドウに実験説明を表示
+    runner = update_window_display(runner, 'instructions');
+
     fprintf('\n========================================\n');
-    fprintf('           実験説明\n');
-    fprintf('========================================\n');
-    fprintf('\n【Stage 1】メトロノームフェーズ\n');
-    fprintf('  - Player1音(左耳)とPlayer2音(右耳)が1秒間隔で交互に再生\n');
-    fprintf('  - 各プレイヤーは自分の音に合わせてタップ練習\n');
-    fprintf('  - Player 1: 左耳の音 → S キーでタップ\n');
-    fprintf('  - Player 2: 右耳の音 → C キーでタップ\n');
-    fprintf('  - 正確な1秒間隔のリズムを学習\n');
-    fprintf('\n【Stage 2】協調タッピングフェーズ\n');
-    fprintf('  - Player 1から開始\n');
-    fprintf('  - 相手がタップすると自分の耳に音が聞こえます\n');
-    fprintf('  - Player 1: 左耳に聞こえる音に合わせてSキー\n');
-    fprintf('  - Player 2: 右耳に聞こえる音に合わせてCキー\n');
-    fprintf('  - できるだけ正確な1秒間隔を維持してください\n');
-    fprintf('\n【中止方法】\n');
-    fprintf('  - Escapeキーで中断可能\n');
+    fprintf('実験説明をウィンドウに表示しました\n');
+    fprintf('準備ができたらスペースキーを押してください\n');
     fprintf('========================================\n\n');
 
-    input('準備ができたらEnterキーを押してください...', 's');
+    % スペースキー待機
+    wait_for_space_key();
 end
 
 function [runner, success] = run_stage1_metronome(runner)
     % Stage1: 完全周期メトロノーム段階
-    % 刺激音（Player1左）とプレイヤー音（Player2右）を1秒間隔で交互再生
+    % 両プレイヤーが両方の音を聞いて、決まったタイミングを学習
     global experiment_running
     global experiment_clock_start
 
     success = false;
 
-    fprintf('完全周期メトロノーム開始: Player1音(左) と Player2音(右) を1秒間隔で交互再生\n');
-    fprintf('Player1: 左耳の音に合わせてSキーでタップ練習\n');
-    fprintf('Player2: 右耳の音に合わせてCキーでタップ練習\n');
-    fprintf('目標: %d回ずつタップ（合計%d音）\n', runner.stage1_beats, runner.stage1_beats * 2);
+    % ウィンドウ表示更新
+    runner = update_window_display(runner, 'stage1_running');
+
+    fprintf('Stage1開始: 両プレイヤーが両方の音（左と右）を聞いて1秒間隔を学習\n');
 
     % タイマー初期化
     runner.clock_start = posixtime(datetime('now'));
     experiment_clock_start = runner.clock_start;
 
-    fprintf('スペースキーで開始...\n');
-    wait_for_space_key();
-
-    fprintf('開始! 正確な1.0秒間隔で音声が交互に再生されます\n');
-
-    % 全音声の絶対スケジュール作成（Player1音とPlayer2音を交互に）
+    % 全音声の絶対スケジュール作成
+    % Player1音とPlayer2音を交互に再生するが、両プレイヤーが両方聞く
     total_sounds = runner.stage1_beats * 2;
 
     for sound_index = 1:total_sounds
@@ -298,7 +279,6 @@ function [runner, success] = run_stage1_metronome(runner)
         end
 
         % 絶対時刻スケジューリング: 0.5, 1.5, 2.5, 3.5, 4.5...秒
-        % 0.5秒のオフセットでスタート時バタつきを回避
         target_time = (sound_index - 1) * 1.0 + 0.5;
 
         % 待機
@@ -307,30 +287,27 @@ function [runner, success] = run_stage1_metronome(runner)
                 fprintf('実験中断\n');
                 return;
             end
-            pause(0.001); % 1ms精度
+            pause(0.001);
         end
 
-        % 音声再生（Player1とPlayer2を交互に）
+        % 音声再生
         actual_time = posixtime(datetime('now')) - experiment_clock_start;
 
         if mod(sound_index, 2) == 1
-            % 奇数: Player1音（左チャンネル）0.5秒、2.5秒、4.5秒...
+            % 奇数: Player1音（左チャンネル）- 両プレイヤーが聞く
             pair_num = ceil(sound_index / 2);
-            fprintf('[%d/%d] Player1音(左) 再生 (%.3fs地点, 目標%.3fs)\n', ...
-                pair_num, runner.stage1_beats, actual_time, target_time);
+            fprintf('[%d/%d] Player1音(左) %.3fs\n', ...
+                pair_num, runner.stage1_beats, actual_time);
 
-            % Player1音再生（左チャンネルのみ）
             PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_buffer);
             PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
 
             runner.data.stage1_player1_taps(end+1) = actual_time;
         else
-            % 偶数: Player2音（右チャンネル）1.5秒、3.5秒、5.5秒...
+            % 偶数: Player2音（右チャンネル）- 両プレイヤーが聞く
             pair_num = sound_index / 2;
-            fprintf('       Player2音(右) 再生 (%.3fs地点, 目標%.3fs)\n', ...
-                actual_time, target_time);
+            fprintf('       Player2音(右) %.3fs\n', actual_time);
 
-            % Player2音再生（右チャンネルのみ）
             PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_buffer);
             PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
 
@@ -340,7 +317,7 @@ function [runner, success] = run_stage1_metronome(runner)
         runner.data.stage1_metro_times(end+1) = actual_time;
     end
 
-    fprintf('\n=== Stage1 完全周期メトロノーム完了 ===\n');
+    fprintf('\n=== Stage1 完了 ===\n');
     fprintf('Player1音: %d回, Player2音: %d回\n', ...
         length(runner.data.stage1_player1_taps), length(runner.data.stage1_player2_taps));
 
@@ -357,10 +334,10 @@ function [runner, success] = run_stage2_cooperative(runner)
 
     success = false;
 
-    fprintf('協調タッピング開始 (%d cycles)\n', runner.stage2_cycles);
-    fprintf('Player 1 (Sキー) から開始してください\n');
-    fprintf('スペースキーで開始...\n');
-    wait_for_space_key();
+    % ウィンドウ表示更新
+    runner = update_window_display(runner, 'stage2_running');
+
+    fprintf('Stage2開始: Player 1 (Sキー) から開始\n');
 
     cycle_count = 0;
     current_player = 1;  % 1: Player 1のターン, 2: Player 2のターン
@@ -637,5 +614,109 @@ function is_escape = check_escape_key()
     is_escape = ~experiment_running;
 
     % イベント処理を確実に実行
+    drawnow;
+end
+
+function runner = update_window_display(runner, mode)
+    % ウィンドウ表示を更新
+
+    if ~isfield(runner, 'window_axes') || ~isvalid(runner.window_axes)
+        return;
+    end
+
+    % 現在の表示をクリア
+    cla(runner.window_axes);
+    axes(runner.window_axes);
+
+    switch mode
+        case 'init'
+            % 初期画面
+            text(0.5, 0.5, '初期化完了', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 20, 'Color', 'white', 'FontWeight', 'bold');
+
+        case 'instructions'
+            % 実験説明
+            text(0.5, 0.9, '実験説明', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 22, 'Color', 'white', 'FontWeight', 'bold');
+
+            text(0.5, 0.75, 'Stage 1: メトロノームフェーズ', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 16, 'Color', [0.3, 0.8, 1.0], 'FontWeight', 'bold');
+            text(0.5, 0.68, '左耳の音と右耳の音が1秒間隔で交互に再生されます', ...
+                'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', 'white');
+            text(0.5, 0.62, '両プレイヤーは両方の音を聞いて、正確な1秒間隔を学習してください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', 'white');
+
+            text(0.5, 0.50, 'Stage 2: 協調タッピングフェーズ', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 16, 'Color', [1.0, 0.8, 0.3], 'FontWeight', 'bold');
+            text(0.5, 0.43, 'Player 1 (Sキー) から開始', ...
+                'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', 'white');
+            text(0.5, 0.37, '相手がタップすると自分の耳に音が聞こえます', ...
+                'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', 'white');
+            text(0.5, 0.31, 'できるだけ正確な1秒間隔を維持してください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 12, 'Color', 'white');
+
+            text(0.5, 0.15, 'スペースキーを押して開始', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 18, 'Color', [0.2, 1.0, 0.2], 'FontWeight', 'bold');
+            text(0.5, 0.05, 'Escapeキーで中断', ...
+                'HorizontalAlignment', 'center', 'FontSize', 10, 'Color', [0.8, 0.8, 0.8]);
+
+        case 'stage1_ready'
+            % Stage1準備
+            text(0.5, 0.6, 'Stage 1: メトロノームフェーズ', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', [0.3, 0.8, 1.0], 'FontWeight', 'bold');
+            text(0.5, 0.45, '左耳の音と右耳の音が1秒間隔で交互に再生されます', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+            text(0.5, 0.35, '両プレイヤーは両方の音を聞いてリズムを学習', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+            text(0.5, 0.2, 'スペースキーを押して開始', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 18, 'Color', [0.2, 1.0, 0.2], 'FontWeight', 'bold');
+
+        case 'stage1_running'
+            % Stage1実行中
+            text(0.5, 0.6, 'Stage 1 実行中', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', [0.3, 0.8, 1.0], 'FontWeight', 'bold');
+            text(0.5, 0.45, '左と右の音を聞いて', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', 'white');
+            text(0.5, 0.35, '1秒間隔のリズムを学習してください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', 'white');
+
+        case 'stage2_ready'
+            % Stage2準備
+            text(0.5, 0.7, 'Stage 2: 協調タッピングフェーズ', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', [1.0, 0.8, 0.3], 'FontWeight', 'bold');
+            text(0.5, 0.55, 'Player 1 (Sキー) から開始', ...
+                'HorizontalAlignment', 'center', 'FontSize', 16, 'Color', [0.3, 0.8, 1.0]);
+            text(0.5, 0.45, '相手がタップすると自分の耳に音が聞こえます', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+            text(0.5, 0.35, 'Player 1: Sキー (左耳に音)', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', [0.3, 0.8, 1.0]);
+            text(0.5, 0.27, 'Player 2: Cキー (右耳に音)', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', [1.0, 0.8, 0.3]);
+            text(0.5, 0.15, 'スペースキーを押して開始', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 18, 'Color', [0.2, 1.0, 0.2], 'FontWeight', 'bold');
+
+        case 'stage2_running'
+            % Stage2実行中
+            text(0.5, 0.6, 'Stage 2 実行中', ...
+                'HorizontalAlignment', 'center', ...
+                'FontSize', 24, 'Color', [1.0, 0.8, 0.3], 'FontWeight', 'bold');
+            text(0.5, 0.45, 'Player 1: Sキー', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', [0.3, 0.8, 1.0]);
+            text(0.5, 0.35, 'Player 2: Cキー', ...
+                'HorizontalAlignment', 'center', 'FontSize', 18, 'Color', [1.0, 0.8, 0.3]);
+            text(0.5, 0.2, '1秒間隔を維持してください', ...
+                'HorizontalAlignment', 'center', 'FontSize', 14, 'Color', 'white');
+    end
+
     drawnow;
 end
