@@ -147,19 +147,35 @@ function audio = initialize_stereo_audio_system()
             error('Scarlett 4i4が見つかりません。4チャンネル出力が必要です。');
         end
 
-        % 音声ファイル読み込み
+        % 音声ファイル読み込み（2種類の音）
         stim_path = fullfile(pwd, 'assets', 'sounds', 'stim_beat_optimized.wav');
+        player_path = fullfile(pwd, 'assets', 'sounds', 'player_beat_optimized.wav');
+
         if ~exist(stim_path, 'file')
             error('音声ファイルが見つかりません: %s', stim_path);
         end
+        if ~exist(player_path, 'file')
+            error('音声ファイルが見つかりません: %s', player_path);
+        end
 
-        [sound_data, fs] = audioread(stim_path);
-        if size(sound_data, 2) > 1
-            sound_data = mean(sound_data, 2); % モノラル化
+        [stim_sound, fs] = audioread(stim_path);
+        if size(stim_sound, 2) > 1
+            stim_sound = mean(stim_sound, 2); % モノラル化
+        end
+
+        [player_sound, fs2] = audioread(player_path);
+        if size(player_sound, 2) > 1
+            player_sound = mean(player_sound, 2); % モノラル化
+        end
+
+        % サンプリングレート確認
+        if fs ~= fs2
+            error('音声ファイルのサンプリングレートが一致しません');
         end
 
         audio.fs = fs;
-        audio.sound_mono = sound_data;
+        audio.stim_sound = stim_sound;
+        audio.player_sound = player_sound;
 
         % 4チャンネルバッファ作成用の音声データ
         % チャンネル1/2: Player 1用（出力1/2）
@@ -176,36 +192,31 @@ function audio = initialize_stereo_audio_system()
         fprintf('  出力チャンネル数: 4\n');
         fprintf('  出力遅延: %.3f ms\n', status.PredictedLatency * 1000);
 
-        % メトロノーム音バッファ (全チャンネルに出力 - 未使用)
-        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
-        metro_4ch = [sound_data, sound_data, sound_data, sound_data]';
-        audio.metro_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, metro_4ch);
-
-        % Stage1用: Player1音（全プレイヤーが聞く）
-        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
-        p1_stage1_4ch = [sound_data, sound_data, sound_data, sound_data]';
+        % Stage1用: Player1音（全プレイヤーが聞く - stim_sound使用）
+        % [Ch1, Ch2, Ch3, Ch4] = [stim音, stim音, stim音, stim音]
+        p1_stage1_4ch = [stim_sound, stim_sound, stim_sound, stim_sound]';
         audio.player1_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage1_4ch);
 
-        % Stage1用: Player2音（全プレイヤーが聞く）
-        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
-        p2_stage1_4ch = [sound_data, sound_data, sound_data, sound_data]';
+        % Stage1用: Player2音（全プレイヤーが聞く - player_sound使用）
+        % [Ch1, Ch2, Ch3, Ch4] = [player音, player音, player音, player音]
+        p2_stage1_4ch = [player_sound, player_sound, player_sound, player_sound]';
         audio.player2_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage1_4ch);
 
         % Stage2用: Player1刺激音バッファ (出力1/2のみ - Player1だけが聞く)
-        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 0, 0]
-        p1_stage2_4ch = [sound_data, sound_data, zeros(size(sound_data)), zeros(size(sound_data))]';
+        % [Ch1, Ch2, Ch3, Ch4] = [stim音, stim音, 0, 0]
+        p1_stage2_4ch = [stim_sound, stim_sound, zeros(size(stim_sound)), zeros(size(stim_sound))]';
         audio.player1_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage2_4ch);
 
         % Stage2用: Player2刺激音バッファ (出力3/4のみ - Player2だけが聞く)
-        % [Ch1, Ch2, Ch3, Ch4] = [0, 0, 音, 音]
-        p2_stage2_4ch = [zeros(size(sound_data)), zeros(size(sound_data)), sound_data, sound_data]';
+        % [Ch1, Ch2, Ch3, Ch4] = [0, 0, player音, player音]
+        p2_stage2_4ch = [zeros(size(player_sound)), zeros(size(player_sound)), player_sound, player_sound]';
         audio.player2_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage2_4ch);
 
         fprintf('音声バッファ作成完了:\n');
-        fprintf('  Stage1 Player1音: 全チャンネル（両プレイヤーが聞く）\n');
-        fprintf('  Stage1 Player2音: 全チャンネル（両プレイヤーが聞く）\n');
-        fprintf('  Stage2 Player1音: 出力1/2のみ\n');
-        fprintf('  Stage2 Player2音: 出力3/4のみ\n');
+        fprintf('  Stage1 Player1音(stim): 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage1 Player2音(player): 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage2 Player1音(stim): 出力1/2のみ\n');
+        fprintf('  Stage2 Player2音(player): 出力3/4のみ\n');
 
     catch ME
         fprintf('❌ PsychPortAudio初期化エラー: %s\n', ME.message);
@@ -285,22 +296,6 @@ function runner = play_sound_preview(runner)
     PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage2_buffer);
     PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
     pause(1.5);
-
-    % 両方の音を交互に再生（Stage1の練習）
-    fprintf('\n交互再生のデモンストレーション\n');
-    runner = update_window_display(runner, 'sound_check_demo');
-
-    for i = 1:2
-        fprintf('  Player1音\n');
-        PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player1_stage1_buffer);
-        PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
-        pause(1.0);
-
-        fprintf('  Player2音\n');
-        PsychPortAudio('FillBuffer', runner.audio.pahandle, runner.audio.player2_stage1_buffer);
-        PsychPortAudio('Start', runner.audio.pahandle, 1, 0, 1);
-        pause(1.0);
-    end
 
     fprintf('\n音確認完了。準備ができたらスペースキーを押してください\n');
     runner = update_window_display(runner, 'sound_check_complete');
