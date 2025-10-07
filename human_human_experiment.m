@@ -109,10 +109,10 @@ function runner = initialize_human_human_runner()
     text(0.5, 0.8, '人間同士協調タッピング実験', ...
         'HorizontalAlignment', 'center', ...
         'FontSize', 18, 'Color', 'white', 'FontWeight', 'bold');
-    text(0.5, 0.6, 'Player 1: Q キー (左耳に音)', ...
+    text(0.5, 0.6, 'Player 1: S キー (左耳に音)', ...
         'HorizontalAlignment', 'center', ...
         'FontSize', 14, 'Color', [0.3, 0.8, 1.0]);
-    text(0.5, 0.5, 'Player 2: P キー (右耳に音)', ...
+    text(0.5, 0.5, 'Player 2: C キー (右耳に音)', ...
         'HorizontalAlignment', 'center', ...
         'FontSize', 14, 'Color', [1.0, 0.8, 0.3]);
     text(0.5, 0.3, 'Escape: 実験中止', ...
@@ -252,13 +252,13 @@ function display_experiment_instructions()
     fprintf('\n【Stage 1】メトロノームフェーズ\n');
     fprintf('  - 1秒間隔のメトロノーム音が再生されます\n');
     fprintf('  - 両プレイヤーは音に合わせてタップ練習\n');
-    fprintf('  - Player 1: Q キー\n');
-    fprintf('  - Player 2: P キー\n');
+    fprintf('  - Player 1: S キー\n');
+    fprintf('  - Player 2: C キー\n');
     fprintf('\n【Stage 2】協調タッピングフェーズ\n');
     fprintf('  - Player 1から開始\n');
     fprintf('  - 相手がタップすると自分の耳に音が聞こえます\n');
-    fprintf('  - Player 1: 左耳に聞こえる音に合わせてQキー\n');
-    fprintf('  - Player 2: 右耳に聞こえる音に合わせてPキー\n');
+    fprintf('  - Player 1: 左耳に聞こえる音に合わせてSキー\n');
+    fprintf('  - Player 2: 右耳に聞こえる音に合わせてCキー\n');
     fprintf('  - できるだけ正確な1秒間隔を維持してください\n');
     fprintf('\n【中止方法】\n');
     fprintf('  - Escapeキーで中断可能\n');
@@ -277,6 +277,7 @@ function [runner, success] = run_stage1_metronome(runner)
     fprintf('メトロノーム開始 (%d beats, %.1fs間隔)\n', ...
         runner.stage1_beats, runner.target_interval);
     fprintf('両プレイヤーは音に合わせてタップ練習してください\n');
+    fprintf('Player 1: Sキー, Player 2: Cキー\n');
 
     % タイマー初期化
     runner.clock_start = posixtime(datetime('now'));
@@ -353,7 +354,7 @@ function [runner, success] = run_stage2_cooperative(runner)
     success = false;
 
     fprintf('協調タッピング開始 (%d cycles)\n', runner.stage2_cycles);
-    fprintf('Player 1 (Qキー) から開始してください\n');
+    fprintf('Player 1 (Sキー) から開始してください\n');
     fprintf('スペースキーで開始...\n');
     wait_for_space_key();
 
@@ -565,9 +566,9 @@ function human_human_key_press_handler(~, event)
 
     key = event.Key;
 
-    if strcmp(key, 'q')
+    if strcmp(key, 's')
         player1_key_pressed = true;
-    elseif strcmp(key, 'p')
+    elseif strcmp(key, 'c')
         player2_key_pressed = true;
     elseif strcmp(key, 'escape')
         experiment_running = false;
@@ -580,9 +581,9 @@ function human_human_key_release_handler(~, event)
 
     key = event.Key;
 
-    if strcmp(key, 'q')
+    if strcmp(key, 's')
         player1_key_pressed = false;
-    elseif strcmp(key, 'p')
+    elseif strcmp(key, 'c')
         player2_key_pressed = false;
     end
 end
