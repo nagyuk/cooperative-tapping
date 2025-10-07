@@ -128,24 +128,23 @@ function audio = initialize_stereo_audio_system()
         % デバイス検索
         devices = PsychPortAudio('GetDevices');
 
-        % Scarlett 4i4を優先的に検索
+        % Scarlett 4i4を優先的に検索（4チャンネル出力必須）
         device_id = [];
         for i = 1:length(devices)
-            if devices(i).NrOutputChannels >= 2
+            if devices(i).NrOutputChannels >= 4
                 device_name = devices(i).DeviceName;
                 if contains(lower(device_name), 'scarlett') || contains(lower(device_name), '4i4')
                     device_id = devices(i).DeviceIndex;
-                    fprintf('✅ Scarlett 4i4検出: %s (DeviceIndex=%d)\n', ...
-                        device_name, device_id);
+                    fprintf('✅ Scarlett 4i4検出: %s (DeviceIndex=%d, %dチャンネル)\n', ...
+                        device_name, device_id, devices(i).NrOutputChannels);
                     break;
                 end
             end
         end
 
-        % Scarlett見つからない場合はデフォルトデバイス
+        % Scarlett見つからない場合はエラー
         if isempty(device_id)
-            device_id = -1;
-            fprintf('⚠️  Scarlett 4i4未検出、デフォルトデバイス使用\n');
+            error('Scarlett 4i4が見つかりません。4チャンネル出力が必要です。');
         end
 
         % 音声ファイル読み込み
@@ -162,34 +161,40 @@ function audio = initialize_stereo_audio_system()
         audio.fs = fs;
         audio.sound_mono = sound_data;
 
-        % ステレオバッファ作成用の音声データ
-        % メトロノーム: 両チャンネル
-        % 刺激音: 左チャンネルのみ (Player 1用)
-        % プレイヤー音: 右チャンネルのみ (Player 2用)
+        % 4チャンネルバッファ作成用の音声データ
+        % チャンネル1/2: Player 1用（出力1/2）
+        % チャンネル3/4: Player 2用（出力3/4）
 
-        % PsychPortAudioデバイスオープン (ステレオ出力)
+        % PsychPortAudioデバイスオープン (4チャンネル出力)
         % mode=1: 再生のみ, reqlatencyclass=2: 低遅延モード
-        audio.pahandle = PsychPortAudio('Open', device_id, 1, 2, fs, 2);
+        audio.pahandle = PsychPortAudio('Open', device_id, 1, 2, fs, 4);
 
         % 遅延情報取得
         status = PsychPortAudio('GetStatus', audio.pahandle);
         fprintf('PsychPortAudio初期化完了:\n');
         fprintf('  サンプリング周波数: %d Hz\n', fs);
+        fprintf('  出力チャンネル数: 4\n');
         fprintf('  出力遅延: %.3f ms\n', status.PredictedLatency * 1000);
 
-        % メトロノーム音バッファ (ステレオ両チャンネル)
-        metro_stereo = [sound_data, sound_data]';
-        audio.metro_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, metro_stereo);
+        % メトロノーム音バッファ (全チャンネルに出力 - Stage1用)
+        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 音, 音]
+        metro_4ch = [sound_data, sound_data, sound_data, sound_data]';
+        audio.metro_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, metro_4ch);
 
-        % Player 1刺激音バッファ (左チャンネルのみ)
-        p1_stereo = [sound_data, zeros(size(sound_data))]';
-        audio.player1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stereo);
+        % Player 1刺激音バッファ (出力1/2のみ)
+        % [Ch1, Ch2, Ch3, Ch4] = [音, 音, 0, 0]
+        p1_4ch = [sound_data, sound_data, zeros(size(sound_data)), zeros(size(sound_data))]';
+        audio.player1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_4ch);
 
-        % Player 2刺激音バッファ (右チャンネルのみ)
-        p2_stereo = [zeros(size(sound_data)), sound_data]';
-        audio.player2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stereo);
+        % Player 2刺激音バッファ (出力3/4のみ)
+        % [Ch1, Ch2, Ch3, Ch4] = [0, 0, 音, 音]
+        p2_4ch = [zeros(size(sound_data)), zeros(size(sound_data)), sound_data, sound_data]';
+        audio.player2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_4ch);
 
-        fprintf('音声バッファ作成完了 (メトロノーム, Player1左, Player2右)\n');
+        fprintf('音声バッファ作成完了:\n');
+        fprintf('  メトロノーム: 全チャンネル(1/2/3/4)\n');
+        fprintf('  Player1音: 出力1/2のみ\n');
+        fprintf('  Player2音: 出力3/4のみ\n');
 
     catch ME
         fprintf('❌ PsychPortAudio初期化エラー: %s\n', ME.message);

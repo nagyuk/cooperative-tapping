@@ -26,8 +26,8 @@ setup_psychtoolbox
 
 1. Scarlett 4i4をUSB接続
 2. ヘッドフォン/イヤフォンを接続:
-   - Output 1 (左): Player 1用
-   - Output 2 (右): Player 2用
+   - Output 1/2 (ヘッドフォン端子1): Player 1用
+   - Output 3/4 (ヘッドフォン端子2): Player 2用
 
 ### 3. 実験実行
 
@@ -88,8 +88,11 @@ data/raw/YYYYMMDD/[participant]_human_human_[timestamp]/
 - **バックエンド**: PsychPortAudio
 - **遅延クラス**: 2 (低遅延モード)
 - **サンプリングレート**: 22.05kHz
-- **出力**: ステレオ (2チャンネル)
+- **出力**: 4チャンネル (Scarlett 4i4)
 - **推定遅延**: ~7ms (Scarlett 4i4使用時)
+- **チャンネル分離**:
+  - Ch1/2 (出力1/2): Player 1専用
+  - Ch3/4 (出力3/4): Player 2専用
 
 ### タイミング精度
 
@@ -97,11 +100,11 @@ data/raw/YYYYMMDD/[participant]_human_human_[timestamp]/
 - **ポーリング間隔**: 1ms
 - **キー入力デバウンス**: 50ms
 
-### ステレオ分離
+### 4チャンネル分離
 
-- **Player 1刺激音**: 左チャンネルのみ (`[sound, zeros]`)
-- **Player 2刺激音**: 右チャンネルのみ (`[zeros, sound]`)
-- **メトロノーム**: 両チャンネル (`[sound, sound]`)
+- **メトロノーム**: 全チャンネル (`[sound, sound, sound, sound]`)
+- **Player 1刺激音**: 出力1/2のみ (`[sound, sound, 0, 0]`)
+- **Player 2刺激音**: 出力3/4のみ (`[0, 0, sound, sound]`)
 
 ## 主要ファイル
 
