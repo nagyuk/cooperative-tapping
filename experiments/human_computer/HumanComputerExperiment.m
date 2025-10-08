@@ -118,6 +118,38 @@ classdef HumanComputerExperiment < BaseExperiment
 
             fprintf('✅ オーディオバッファ作成完了\n');
         end
+
+        function display_results(obj)
+            % 結果表示（オーバーライド）
+
+            fprintf('\n========================================\n');
+            fprintf('           実験結果\n');
+            fprintf('========================================\n');
+
+            fprintf('参加者ID: %s\n', obj.participant_id);
+            fprintf('モデル: %s\n', obj.model.model_type);
+            fprintf('モデル情報: %s\n', obj.model.get_model_info());
+
+            % Stage1結果
+            fprintf('\n--- Stage 1 ---\n');
+            fprintf('メトロノームビート: %d回\n', obj.stage1_beats);
+
+            % Stage2結果
+            fprintf('\n--- Stage 2 ---\n');
+            fprintf('総タップ数: %d回\n', length(obj.recorder.data.stage2_data));
+
+            if ~isempty(obj.recorder.data.stage2_data)
+                % SE統計
+                taps = obj.recorder.data.stage2_data;
+                se_values = [taps.se];
+
+                fprintf('同期エラー統計:\n');
+                fprintf('  平均SE: %.3f秒\n', mean(se_values));
+                fprintf('  SE標準偏差: %.3f秒\n', std(se_values));
+            end
+
+            obj.update_display('実験完了！ありがとうございました', 'color', [0.2, 1.0, 0.2]);
+        end
     end
 
     methods (Access = protected)
@@ -303,38 +335,6 @@ classdef HumanComputerExperiment < BaseExperiment
             end
 
             fprintf('Stage2完了: %dサイクル\n', cycle_count);
-        end
-
-        function display_results(obj)
-            % 結果表示（オーバーライド）
-
-            fprintf('\n========================================\n');
-            fprintf('           実験結果\n');
-            fprintf('========================================\n');
-
-            fprintf('参加者ID: %s\n', obj.participant_id);
-            fprintf('モデル: %s\n', obj.model.model_type);
-            fprintf('モデル情報: %s\n', obj.model.get_model_info());
-
-            % Stage1結果
-            fprintf('\n--- Stage 1 ---\n');
-            fprintf('メトロノームビート: %d回\n', obj.stage1_beats);
-
-            % Stage2結果
-            fprintf('\n--- Stage 2 ---\n');
-            fprintf('総タップ数: %d回\n', length(obj.recorder.data.stage2_data));
-
-            if ~isempty(obj.recorder.data.stage2_data)
-                % SE統計
-                taps = obj.recorder.data.stage2_data;
-                se_values = [taps.se];
-
-                fprintf('同期エラー統計:\n');
-                fprintf('  平均SE: %.3f秒\n', mean(se_values));
-                fprintf('  SE標準偏差: %.3f秒\n', std(se_values));
-            end
-
-            obj.update_display('実験完了！ありがとうございました', 'color', [0.2, 1.0, 0.2]);
         end
     end
 end
