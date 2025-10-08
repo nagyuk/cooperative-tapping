@@ -56,12 +56,19 @@ end
 function run_human_computer()
     % 人間-コンピュータ実験実行
 
-    fprintf('\n人間-コンピュータ実験はまだ実装中です\n');
-    fprintf('現在のmain_experiment.mを使用してください\n');
+    fprintf('\n=== 人間-コンピュータ実験 ===\n\n');
 
-    % TODO: HumanComputerExperimentクラス実装後に有効化
-    % exp = HumanComputerExperiment();
-    % exp.execute();
+    % HumanComputerExperimentインスタンス作成
+    exp = HumanComputerExperiment();
+
+    % 実験実行
+    success = exp.execute();
+
+    if success
+        fprintf('\n✅ 実験が正常に完了しました\n');
+    else
+        fprintf('\n⚠️  実験が中断されました\n');
+    end
 end
 
 function run_human_human()
