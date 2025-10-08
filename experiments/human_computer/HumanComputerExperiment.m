@@ -41,7 +41,16 @@ classdef HumanComputerExperiment < BaseExperiment
             obj.recorder = DataRecorder('human_computer', {obj.participant_id});
             obj.recorder.set_metadata('model_type', obj.model.model_type);
 
-            % オーディオバッファ準備
+            % 注意: オーディオバッファ準備はinitialize_systems()で行う
+        end
+
+        function initialize_systems(obj)
+            % システム初期化（オーバーライド）
+
+            % 親クラスの初期化を呼ぶ（audio, timer, input_windowを作成）
+            initialize_systems@BaseExperiment(obj);
+
+            % オーディオバッファ準備（audioが初期化された後）
             obj.prepare_audio_buffers();
         end
 
