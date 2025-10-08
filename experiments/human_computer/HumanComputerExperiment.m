@@ -331,11 +331,18 @@ classdef HumanComputerExperiment < BaseExperiment
                             prev_player = player_taps(end-1);
                             curr_player = player_taps(end);
                             se = current_stim - (prev_player + curr_player) / 2;
-                        elseif length(stim_taps) >= 1 && length(player_taps) == 1
-                            % 初回は簡易計算
-                            se = stim_taps(end) - player_taps(end);
+
+                            if obj.experiment_config.DEBUG_MODEL
+                                fprintf('DEBUG: SE計算 = %.3f - (%.3f + %.3f)/2 = %.3f\n', ...
+                                    current_stim, prev_player, curr_player, se);
+                            end
                         else
-                            se = 0;
+                            % 初回はデータ不足のためSE=0
+                            se = 0.0;
+
+                            if obj.experiment_config.DEBUG_MODEL
+                                fprintf('DEBUG: SE計算スキップ (データ不足)\n');
+                            end
                         end
 
                         % モデル推論
