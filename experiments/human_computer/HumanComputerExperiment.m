@@ -150,9 +150,7 @@ classdef HumanComputerExperiment < BaseExperiment
 
             obj.update_display('実験完了！ありがとうございました', 'color', [0.2, 1.0, 0.2]);
         end
-    end
 
-    methods (Access = protected)
         function key_press_handler(obj, src, event)
             % キー押下ハンドラ（オーバーライド）
 
@@ -194,7 +192,9 @@ classdef HumanComputerExperiment < BaseExperiment
 
             obj.wait_for_space();
         end
+    end
 
+    methods (Access = protected)
         function run_stage1(obj)
             % Stage1: 同期タッピングフェーズ（メトロノームと同期）
 
