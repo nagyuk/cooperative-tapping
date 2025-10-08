@@ -205,145 +205,166 @@ classdef HumanComputerExperiment < BaseExperiment
 
     methods (Access = protected)
         function run_stage1(obj)
-            % Stage1: 同期タッピングフェーズ（メトロノームと同期）
+            % Stage1: 完全周期メトロノームフェーズ
+            % 刺激音とプレイヤー音を0.5秒間隔で交互に自動再生（キー入力なし）
+            % 実際の間隔は1.0秒（刺激音→刺激音、プレイヤー音→プレイヤー音）
 
-            obj.update_display('Stage 1: 同期タッピング', 'color', [1.0, 0.8, 0.3]);
+            obj.update_display('Stage 1: メトロノームリズム学習', 'color', [1.0, 0.8, 0.3]);
             pause(1);
 
             % タイミングスタート
             obj.timer.start();
 
-            % メトロノームスケジュール作成
-            metronome_schedule = obj.timer.create_schedule(0.5, obj.target_interval, obj.stage1_beats);
+            % 音数の計算（刺激音とプレイヤー音が交互）
+            % stage1_beats回のサイクル = beats*2回の音
+            required_sounds = obj.stage1_beats * 2;  % 刺激音10回 + プレイヤー音10回 = 20音
 
-            fprintf('Stage1開始: %dビートのメトロノーム同期\n', obj.stage1_beats);
+            fprintf('Stage1開始: %d回の完全周期メトロノーム（刺激音%d回 + プレイヤー音%d回）\n', ...
+                required_sounds, obj.stage1_beats, obj.stage1_beats);
 
-            for i = 1:obj.stage1_beats
+            % 音スケジュール作成（0.5秒間隔で交互）
+            sound_schedule = obj.timer.create_schedule(0.5, 0.5, required_sounds);
+
+            for sound_index = 1:required_sounds
                 if ~obj.is_running
                     return;
                 end
 
-                % メトロノーム音再生タイミングまで待機
-                obj.timer.wait_until(metronome_schedule(i), @() obj.escape_pressed);
+                % 次の音再生タイミングまで待機
+                obj.timer.wait_until(sound_schedule(sound_index), @() obj.escape_pressed);
 
-                % メトロノーム音再生
-                metronome_time = obj.timer.record_event();
-                obj.audio.play_buffer(obj.metronome_buffer, false);
+                % 音再生時刻記録
+                actual_time = obj.timer.record_event();
+                target_time = sound_schedule(sound_index);
 
-                fprintf('[%d/%d] メトロノーム %.3fs\n', i, obj.stage1_beats, metronome_time);
+                if mod(sound_index, 2) == 1
+                    % 奇数: 刺激音（0秒、1秒、2秒...）
+                    pair_num = ceil(sound_index / 2);
+                    fprintf('[%d/%d] 刺激音再生 (%.3fs地点, 目標%.3fs)\n', ...
+                        pair_num, obj.stage1_beats, actual_time, target_time);
+                    obj.audio.play_buffer(obj.stim_buffer, 0);
 
-                % データ記録
-                obj.recorder.record_stage1_event(metronome_time, 'beat_number', i);
-
-                % プレイヤータップ待機（次のメトロノームまで）
-                if i < obj.stage1_beats
-                    next_metronome_time = metronome_schedule(i+1);
+                    % データ記録
+                    obj.recorder.record_stage1_event(actual_time, ...
+                        'sound_type', 'stim', 'beat_number', pair_num);
                 else
-                    next_metronome_time = metronome_time + obj.target_interval;
-                end
+                    % 偶数: プレイヤー音（0.5秒、1.5秒、2.5秒...）
+                    pair_num = sound_index / 2;
+                    fprintf('       プレイヤー音再生 (%.3fs地点, 目標%.3fs) - 練習リズム\n', ...
+                        actual_time, target_time);
+                    obj.audio.play_buffer(obj.player_buffer, 0);
 
-                obj.key_pressed = false;
-                while obj.timer.get_elapsed_time() < next_metronome_time && obj.is_running
-                    if obj.key_pressed
-                        tap_time = obj.timer.record_event();
-                        obj.audio.play_buffer(obj.player_buffer, false);
-                        fprintf('       プレイヤータップ %.3fs\n', tap_time);
-
-                        % SE計算（簡易版 - Stage1では記録のみ）
-                        se = tap_time - metronome_time - obj.target_interval;
-
-                        obj.recorder.record_stage1_event(tap_time, 'beat_number', i, 'is_tap', true, 'se', se);
-                        obj.key_pressed = false;
-                    end
-                    pause(0.001);
-                    drawnow;
+                    % データ記録
+                    obj.recorder.record_stage1_event(actual_time, ...
+                        'sound_type', 'player', 'beat_number', pair_num);
                 end
             end
 
-            fprintf('Stage1完了\n');
+            fprintf('\nStage1完了: %d回の完全周期メトロノーム\n', obj.stage1_beats);
         end
 
         function run_stage2(obj)
-            % Stage2: 交互タッピングフェーズ（コンピュータと交互）
+            % Stage2: 協調交互タッピングフェーズ
+            % システム（刺激音）が先に開始し、人間がその中間でタップ
+            % 元のmain_experiment.mの仕様に準拠
 
-            obj.update_display('Stage 2: 交互タッピング', 'color', [1.0, 0.8, 0.3]);
+            obj.update_display('Stage 2: 協調交互タッピング', 'color', [1.0, 0.8, 0.3]);
             pause(1);
 
-            fprintf('Stage2開始: コンピュータとの交互タッピング\n');
+            fprintf('Stage2開始: コンピュータとの協調交互タッピング\n');
+            fprintf('Stage1で学習した1.0秒間隔を基準とした交互タッピングです\n');
+            fprintf('システムが刺激音のタイミングを動的に調整します\n\n');
 
-            current_turn = 'human';  % 'human' or 'computer'
-            cycle_count = 0;
-            last_tap_time = obj.timer.get_elapsed_time();
+            % Stage1から継続的な時刻基準
+            current_time = obj.timer.get_elapsed_time();
 
-            % 人間の最初のタップ待機
-            obj.update_display('スペースキーでタップ開始', 'color', [0.2, 1.0, 0.2]);
+            % 初期間隔（Stage1の1.0秒間隔基準）
+            initial_interval = 1.0;
+            next_stim_time = current_time + initial_interval;
 
-            while cycle_count < obj.stage2_cycles && obj.is_running
-                if strcmp(current_turn, 'human')
-                    % 人間のタップ待機
-                    obj.key_pressed = false;
-                    while ~obj.key_pressed && obj.is_running
-                        pause(0.001);
-                        drawnow;
-                    end
+            fprintf('INFO: Stage2協調交互タッピング開始\n');
+            fprintf('最初のシステム刺激音まで: %.3f秒\n', initial_interval);
+            fprintf('システム音の中間地点（%.3f秒後）でタップしてください\n\n', initial_interval / 2);
 
-                    if ~obj.is_running
-                        return;
-                    end
+            turn = 0;
+            flag = 1;  % 1: システムターン, 0: プレイヤーターン
 
-                    % タップ記録
+            % データ記録用配列
+            stim_taps = [];
+            player_taps = [];
+
+            while turn < obj.stage2_cycles && obj.is_running
+                current_abs_time = obj.timer.get_elapsed_time();
+                time_until_stim = next_stim_time - current_abs_time;
+
+                % システムのターン
+                if time_until_stim <= 0 && flag == 1
+                    % 刺激音再生
                     tap_time = obj.timer.record_event();
-                    obj.audio.play_buffer(obj.player_buffer, false);
+                    obj.audio.play_buffer(obj.stim_buffer, 0);
 
-                    % SE計算
-                    se = tap_time - last_tap_time - obj.target_interval;
+                    stim_taps(end+1) = tap_time;
 
-                    obj.recorder.record_stage2_tap('human', tap_time, 'cycle', cycle_count + 1, 'se', se);
+                    fprintf('[%d回目の刺激音] %.3fs地点\n', turn + 1, tap_time);
 
-                    fprintf('人間タップ: %.3fs (SE=%.3f, サイクル %d)\n', tap_time, se, cycle_count + 1);
+                    % データ記録（最初の刺激音はSEなし）
+                    obj.recorder.record_stage2_tap('stim', tap_time, 'turn', turn + 1);
 
-                    last_tap_time = tap_time;
-                    current_turn = 'computer';
+                    flag = 0;
+                    turn = turn + 1;
 
-                else
-                    % コンピュータのタップ（モデル予測）
-                    % 前回のSEを使用して次の間隔を予測
-                    if cycle_count > 0
-                        prev_tap = obj.recorder.data.stage2_data(end);
-                        if isfield(prev_tap, 'se')
-                            se = prev_tap.se;
+                    % 最終ターン判定
+                    if turn >= obj.stage2_cycles
+                        fprintf('INFO: 最終ターン(%d)到達。最後のタップをしてください\n', turn);
+                        break;
+                    end
+                end
+
+                % プレイヤーのターン
+                if flag == 0
+                    if obj.key_pressed
+                        % タップ記録
+                        tap_time = obj.timer.record_event();
+                        player_taps(end+1) = tap_time;
+
+                        fprintf('[%d回目のプレイヤータップ] %.3fs地点\n', turn, tap_time);
+
+                        % SE計算（元の実装準拠）
+                        % SE = stim_tap[n] - (player_tap[n-1] + player_tap[n])/2
+                        if length(stim_taps) >= 1 && length(player_taps) >= 2
+                            current_stim = stim_taps(end);
+                            prev_player = player_taps(end-1);
+                            curr_player = player_taps(end);
+                            se = current_stim - (prev_player + curr_player) / 2;
+                        elseif length(stim_taps) >= 1 && length(player_taps) == 1
+                            % 初回は簡易計算
+                            se = stim_taps(end) - player_taps(end);
                         else
                             se = 0;
                         end
-                    else
-                        se = 0;  % 初回
+
+                        % モデル推論
+                        predicted_interval = obj.model.predict_next_interval(se);
+
+                        % データ記録
+                        obj.recorder.record_stage2_tap('player', tap_time, ...
+                            'turn', turn, 'se', se, 'predicted_interval', predicted_interval);
+
+                        fprintf('  SE=%.3f -> 次の刺激音まで予測間隔=%.3f秒\n', se, predicted_interval);
+
+                        % 次の刺激音時刻を設定
+                        next_stim_time = tap_time + predicted_interval;
+                        flag = 1;
+                        obj.key_pressed = false;
                     end
-
-                    % モデルに次の間隔を予測させる
-                    predicted_interval = obj.model.predict_next_interval(se);
-
-                    % 待機
-                    target_time = last_tap_time + predicted_interval;
-                    obj.timer.wait_until(target_time - obj.timer.clock_start, @() obj.escape_pressed);
-
-                    % コンピュータタップ
-                    tap_time = obj.timer.record_event();
-                    obj.audio.play_buffer(obj.stim_buffer, false);
-
-                    % SE計算
-                    computer_se = tap_time - last_tap_time - obj.target_interval;
-
-                    obj.recorder.record_stage2_tap('computer', tap_time, 'cycle', cycle_count + 1, 'se', computer_se, 'predicted_interval', predicted_interval);
-
-                    fprintf('コンピュータタップ: %.3fs (予測間隔=%.3f, SE=%.3f)\n', tap_time, predicted_interval, computer_se);
-
-                    last_tap_time = tap_time;
-                    current_turn = 'human';
-                    cycle_count = cycle_count + 1;
                 end
+
+                % CPU負荷軽減
+                pause(0.00001);
+                drawnow;
             end
 
-            fprintf('Stage2完了: %dサイクル\n', cycle_count);
+            fprintf('\nStage2完了: %dサイクル\n', turn);
         end
     end
 end

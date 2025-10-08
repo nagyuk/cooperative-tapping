@@ -100,7 +100,32 @@ classdef DataRecorder < handle
                 tap.(varargin{i}) = varargin{i+1};
             end
 
-            obj.data.stage2_data = [obj.data.stage2_data; tap];
+            % 配列に追加（初回または互換性確保）
+            if isempty(obj.data.stage2_data)
+                obj.data.stage2_data = tap;
+            else
+                % 既存フィールドを補完（stage1と同じロジック）
+                existing_fields = fieldnames(obj.data.stage2_data);
+                new_fields = fieldnames(tap);
+
+                % 既存データに新フィールドを追加
+                for j = 1:length(new_fields)
+                    if ~ismember(new_fields{j}, existing_fields)
+                        for k = 1:length(obj.data.stage2_data)
+                            obj.data.stage2_data(k).(new_fields{j}) = [];
+                        end
+                    end
+                end
+
+                % 新データに既存フィールドを追加
+                for j = 1:length(existing_fields)
+                    if ~isfield(tap, existing_fields{j})
+                        tap.(existing_fields{j}) = [];
+                    end
+                end
+
+                obj.data.stage2_data(end+1) = tap;
+            end
         end
 
         function set_metadata(obj, key, value)
