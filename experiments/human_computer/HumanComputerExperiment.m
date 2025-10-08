@@ -221,9 +221,11 @@ classdef HumanComputerExperiment < BaseExperiment
 
             fprintf('Stage1開始: %d回の完全周期メトロノーム（刺激音%d回 + プレイヤー音%d回）\n', ...
                 required_sounds, obj.stage1_beats, obj.stage1_beats);
+            fprintf('刺激音→プレイヤー音を正確に1.0秒間隔で再生\n\n');
 
-            % 音スケジュール作成（0.5秒間隔で交互）
-            sound_schedule = obj.timer.create_schedule(0.5, 0.5, required_sounds);
+            % 音スケジュール作成（1.0秒間隔で交互、0.5秒オフセット）
+            % sound_index=1: 0.5秒, 2: 1.5秒, 3: 2.5秒...
+            sound_schedule = obj.timer.create_schedule(0.5, 1.0, required_sounds);
 
             for sound_index = 1:required_sounds
                 if ~obj.is_running
