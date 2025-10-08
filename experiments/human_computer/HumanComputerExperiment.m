@@ -58,20 +58,27 @@ classdef HumanComputerExperiment < BaseExperiment
             % 実験設定読み込み
 
             % デフォルト設定
-            config = struct();
-            config.SPAN = 2.0;              % 目標サイクル期間（秒）
-            config.SCALE = 0.02;            % ランダム変動スケール
-            config.BAYES_N_HYPOTHESIS = 20; % ベイズ仮説数
-            config.BIB_L_MEMORY = 1;        % BIBメモリ長
-            config.DEBUG_MODEL = false;     % モデルデバッグ出力
+            default_config = struct();
+            default_config.SPAN = 2.0;              % 目標サイクル期間（秒）
+            default_config.SCALE = 0.02;            % ランダム変動スケール
+            default_config.BAYES_N_HYPOTHESIS = 20; % ベイズ仮説数
+            default_config.BIB_L_MEMORY = 1;        % BIBメモリ長
+            default_config.DEBUG_MODEL = false;     % モデルデバッグ出力
 
-            % configファイルが存在すれば読み込み
+            % configファイルが存在すれば読み込んでマージ
+            config = default_config;
             if exist('experiments/configs/experiment_config.m', 'file')
                 try
                     addpath('experiments/configs');
-                    config = experiment_config();
-                catch
-                    warning('設定ファイル読み込み失敗。デフォルト設定を使用します。');
+                    loaded_config = experiment_config();
+
+                    % デフォルト値にロードした値をマージ
+                    fields = fieldnames(loaded_config);
+                    for i = 1:length(fields)
+                        config.(fields{i}) = loaded_config.(fields{i});
+                    end
+                catch ME
+                    warning('設定ファイル読み込み失敗: %s。デフォルト設定を使用します。', ME.message);
                 end
             end
 
@@ -332,7 +339,7 @@ classdef HumanComputerExperiment < BaseExperiment
                             curr_player = player_taps(end);
                             se = current_stim - (prev_player + curr_player) / 2;
 
-                            if obj.experiment_config.DEBUG_MODEL
+                            if isfield(obj.experiment_config, 'DEBUG_MODEL') && obj.experiment_config.DEBUG_MODEL
                                 fprintf('DEBUG: SE計算 = %.3f - (%.3f + %.3f)/2 = %.3f\n', ...
                                     current_stim, prev_player, curr_player, se);
                             end
@@ -340,7 +347,7 @@ classdef HumanComputerExperiment < BaseExperiment
                             % 初回はデータ不足のためSE=0
                             se = 0.0;
 
-                            if obj.experiment_config.DEBUG_MODEL
+                            if isfield(obj.experiment_config, 'DEBUG_MODEL') && obj.experiment_config.DEBUG_MODEL
                                 fprintf('DEBUG: SE計算スキップ (データ不足)\n');
                             end
                         end
