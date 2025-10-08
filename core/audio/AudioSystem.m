@@ -172,7 +172,10 @@ classdef AudioSystem < handle
             %   wait - 再生完了まで待機するか（デフォルト: false）
 
             if nargin < 3
-                wait = false;
+                wait = 0;  % デフォルト: 待機しない
+            else
+                % boolean型を数値型に変換（PsychPortAudio要件）
+                wait = double(wait);
             end
 
             PsychPortAudio('FillBuffer', obj.pahandle, buffer);
