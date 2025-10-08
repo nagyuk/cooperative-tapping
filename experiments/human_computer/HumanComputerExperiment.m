@@ -238,16 +238,18 @@ classdef HumanComputerExperiment < BaseExperiment
                 % 次の音再生タイミングまで待機
                 obj.timer.wait_until(sound_schedule(sound_index), @() obj.escape_pressed);
 
-                % 音再生時刻記録
-                actual_time = obj.timer.record_event();
                 target_time = sound_schedule(sound_index);
 
                 if mod(sound_index, 2) == 1
                     % 奇数: 刺激音（0秒、1秒、2秒...）
                     pair_num = ceil(sound_index / 2);
+
+                    % 音再生（元の実装準拠: 再生直前に時刻記録）
+                    actual_time = obj.timer.record_event();
+                    obj.audio.play_buffer(obj.stim_buffer, 0);
+
                     fprintf('[%d/%d] 刺激音再生 (%.3fs地点, 目標%.3fs)\n', ...
                         pair_num, obj.stage1_beats, actual_time, target_time);
-                    obj.audio.play_buffer(obj.stim_buffer, 0);
 
                     % データ記録
                     obj.recorder.record_stage1_event(actual_time, ...
@@ -255,9 +257,13 @@ classdef HumanComputerExperiment < BaseExperiment
                 else
                     % 偶数: プレイヤー音（0.5秒、1.5秒、2.5秒...）
                     pair_num = sound_index / 2;
+
+                    % 音再生（元の実装準拠: 再生直前に時刻記録）
+                    actual_time = obj.timer.record_event();
+                    obj.audio.play_buffer(obj.player_buffer, 0);
+
                     fprintf('       プレイヤー音再生 (%.3fs地点, 目標%.3fs) - 練習リズム\n', ...
                         actual_time, target_time);
-                    obj.audio.play_buffer(obj.player_buffer, 0);
 
                     % データ記録
                     obj.recorder.record_stage1_event(actual_time, ...
