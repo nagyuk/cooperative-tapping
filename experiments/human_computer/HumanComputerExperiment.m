@@ -206,11 +206,7 @@ classdef HumanComputerExperiment < BaseExperiment
     methods (Access = protected)
         function run_stage1(obj)
             % Stage1: 完全周期メトロノームフェーズ
-            % 刺激音とプレイヤー音を0.5秒間隔で交互に自動再生（キー入力なし）
-            % 実際の間隔は1.0秒（刺激音→刺激音、プレイヤー音→プレイヤー音）
-
-            obj.update_display('Stage 1: メトロノームリズム学習', 'color', [1.0, 0.8, 0.3]);
-            pause(1);
+            % 刺激音とプレイヤー音を1.0秒間隔で交互に自動再生（キー入力なし）
 
             % タイミングスタート
             obj.timer.start();
@@ -270,9 +266,6 @@ classdef HumanComputerExperiment < BaseExperiment
             % システム（刺激音）が先に開始し、人間がその中間でタップ
             % 元のmain_experiment.mの仕様に準拠
 
-            obj.update_display('Stage 2: 協調交互タッピング', 'color', [1.0, 0.8, 0.3]);
-            pause(1);
-
             fprintf('Stage2開始: コンピュータとの協調交互タッピング\n');
             fprintf('Stage1で学習した1.0秒間隔を基準とした交互タッピングです\n');
             fprintf('システムが刺激音のタイミングを動的に調整します\n\n');
@@ -285,7 +278,7 @@ classdef HumanComputerExperiment < BaseExperiment
             next_stim_time = current_time + initial_interval;
 
             fprintf('INFO: Stage2協調交互タッピング開始\n');
-            fprintf('最初のシステム刺激音まで: %.3f秒\n', initial_interval);
+            fprintf('次のシステム刺激音まで: %.3f秒\n', initial_interval);
             fprintf('システム音の中間地点（%.3f秒後）でタップしてください\n\n', initial_interval / 2);
 
             turn = 0;
