@@ -195,7 +195,11 @@ classdef HumanComputerExperiment < BaseExperiment
                 obj.recorder.record_stage1_event(metronome_time, 'beat_number', i);
 
                 % プレイヤータップ待機（次のメトロノームまで）
-                next_metronome_time = (i < obj.stage1_beats) ? metronome_schedule(i+1) : metronome_time + obj.target_interval;
+                if i < obj.stage1_beats
+                    next_metronome_time = metronome_schedule(i+1);
+                else
+                    next_metronome_time = metronome_time + obj.target_interval;
+                end
 
                 obj.key_pressed = false;
                 while obj.timer.get_elapsed_time() < next_metronome_time && obj.is_running
