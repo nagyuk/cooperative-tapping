@@ -57,7 +57,32 @@ classdef DataRecorder < handle
                 event.(varargin{i}) = varargin{i+1};
             end
 
-            obj.data.stage1_data = [obj.data.stage1_data; event];
+            % 配列に追加（初回または互換性確保）
+            if isempty(obj.data.stage1_data)
+                obj.data.stage1_data = event;
+            else
+                % 既存フィールドを補完
+                existing_fields = fieldnames(obj.data.stage1_data);
+                new_fields = fieldnames(event);
+
+                % 既存データに新フィールドを追加
+                for j = 1:length(new_fields)
+                    if ~ismember(new_fields{j}, existing_fields)
+                        for k = 1:length(obj.data.stage1_data)
+                            obj.data.stage1_data(k).(new_fields{j}) = [];
+                        end
+                    end
+                end
+
+                % 新データに既存フィールドを追加
+                for j = 1:length(existing_fields)
+                    if ~isfield(event, existing_fields{j})
+                        event.(existing_fields{j}) = [];
+                    end
+                end
+
+                obj.data.stage1_data(end+1) = event;
+            end
         end
 
         function record_stage2_tap(obj, player_id, timestamp, varargin)

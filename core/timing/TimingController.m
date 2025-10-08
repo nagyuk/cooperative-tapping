@@ -9,10 +9,7 @@ classdef TimingController < handle
     properties (Access = public)
         experiment_start_time  % 実験開始時刻（datetime）
         clock_start           % 実験開始POSIX時刻（秒）
-    end
-
-    properties (Access = private)
-        is_started = false
+        is_started = false    % クロック開始フラグ（テスト用にpublic）
     end
 
     methods
