@@ -72,12 +72,20 @@ function runner = initialize_human_human_runner()
     runner.stage2_cycles = 20; % Stage2交互タッピングサイクル数
     runner.target_interval = 1.0; % 目標間隔（秒）
 
-    % 参加者情報
+    % 参加者情報（2人分）
     fprintf('\n=== 参加者情報入力 ===\n');
-    runner.participant_id = input('参加者ID (例: P001): ', 's');
-    if isempty(runner.participant_id)
-        runner.participant_id = 'anonymous';
+    runner.participant1_id = input('参加者1 ID (例: P001): ', 's');
+    if isempty(runner.participant1_id)
+        runner.participant1_id = 'P1_anonymous';
     end
+
+    runner.participant2_id = input('参加者2 ID (例: P002): ', 's');
+    if isempty(runner.participant2_id)
+        runner.participant2_id = 'P2_anonymous';
+    end
+
+    fprintf('参加者1: %s (出力1/2, Sキー)\n', runner.participant1_id);
+    fprintf('参加者2: %s (出力3/4, Cキー)\n', runner.participant2_id);
 
     % データ構造初期化
     runner.data = struct();
@@ -148,24 +156,26 @@ function audio = initialize_stereo_audio_system()
         end
 
         % 音声ファイル読み込み（2種類の音）
-        stim_path = fullfile(pwd, 'assets', 'sounds', 'stim_beat_optimized.wav');
-        player_path = fullfile(pwd, 'assets', 'sounds', 'player_beat_optimized.wav');
+        % Player1用の音: stim_beat_optimized.wav
+        % Player2用の音: player_beat_optimized.wav
+        p1_sound_path = fullfile(pwd, 'assets', 'sounds', 'stim_beat_optimized.wav');
+        p2_sound_path = fullfile(pwd, 'assets', 'sounds', 'player_beat_optimized.wav');
 
-        if ~exist(stim_path, 'file')
-            error('音声ファイルが見つかりません: %s', stim_path);
+        if ~exist(p1_sound_path, 'file')
+            error('音声ファイルが見つかりません: %s', p1_sound_path);
         end
-        if ~exist(player_path, 'file')
-            error('音声ファイルが見つかりません: %s', player_path);
-        end
-
-        [stim_sound, fs] = audioread(stim_path);
-        if size(stim_sound, 2) > 1
-            stim_sound = mean(stim_sound, 2); % モノラル化
+        if ~exist(p2_sound_path, 'file')
+            error('音声ファイルが見つかりません: %s', p2_sound_path);
         end
 
-        [player_sound, fs2] = audioread(player_path);
-        if size(player_sound, 2) > 1
-            player_sound = mean(player_sound, 2); % モノラル化
+        [player1_sound, fs] = audioread(p1_sound_path);
+        if size(player1_sound, 2) > 1
+            player1_sound = mean(player1_sound, 2); % モノラル化
+        end
+
+        [player2_sound, fs2] = audioread(p2_sound_path);
+        if size(player2_sound, 2) > 1
+            player2_sound = mean(player2_sound, 2); % モノラル化
         end
 
         % サンプリングレート確認
@@ -174,8 +184,8 @@ function audio = initialize_stereo_audio_system()
         end
 
         audio.fs = fs;
-        audio.stim_sound = stim_sound;
-        audio.player_sound = player_sound;
+        audio.player1_sound = player1_sound;
+        audio.player2_sound = player2_sound;
 
         % 4チャンネルバッファ作成用の音声データ
         % チャンネル1/2: Player 1用（出力1/2）
@@ -192,31 +202,35 @@ function audio = initialize_stereo_audio_system()
         fprintf('  出力チャンネル数: 4\n');
         fprintf('  出力遅延: %.3f ms\n', status.PredictedLatency * 1000);
 
-        % Stage1用: Player1音（全プレイヤーが聞く - stim_sound使用）
-        % [Ch1, Ch2, Ch3, Ch4] = [stim音, stim音, stim音, stim音]
-        p1_stage1_4ch = [stim_sound, stim_sound, stim_sound, stim_sound]';
+        % Stage1用: Player1音（全プレイヤーが聞く）
+        % Player1が反応すべき音。両プレイヤーが聞いてリズムを学習
+        % [Ch1, Ch2, Ch3, Ch4] = [P1音, P1音, P1音, P1音]
+        p1_stage1_4ch = [player1_sound, player1_sound, player1_sound, player1_sound]';
         audio.player1_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage1_4ch);
 
-        % Stage1用: Player2音（全プレイヤーが聞く - player_sound使用）
-        % [Ch1, Ch2, Ch3, Ch4] = [player音, player音, player音, player音]
-        p2_stage1_4ch = [player_sound, player_sound, player_sound, player_sound]';
+        % Stage1用: Player2音（全プレイヤーが聞く）
+        % Player2が反応すべき音。両プレイヤーが聞いてリズムを学習
+        % [Ch1, Ch2, Ch3, Ch4] = [P2音, P2音, P2音, P2音]
+        p2_stage1_4ch = [player2_sound, player2_sound, player2_sound, player2_sound]';
         audio.player2_stage1_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage1_4ch);
 
-        % Stage2用: Player1刺激音バッファ (出力1/2のみ - Player1だけが聞く)
-        % [Ch1, Ch2, Ch3, Ch4] = [stim音, stim音, 0, 0]
-        p1_stage2_4ch = [stim_sound, stim_sound, zeros(size(stim_sound)), zeros(size(stim_sound))]';
+        % Stage2用: Player1への刺激音 (出力1/2のみ - Player1だけが聞く)
+        % Player2がタップした時にPlayer1に聞こえる音 = Player2の音
+        % [Ch1, Ch2, Ch3, Ch4] = [P2音, P2音, 0, 0]
+        p1_stage2_4ch = [player2_sound, player2_sound, zeros(size(player2_sound)), zeros(size(player2_sound))]';
         audio.player1_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p1_stage2_4ch);
 
-        % Stage2用: Player2刺激音バッファ (出力3/4のみ - Player2だけが聞く)
-        % [Ch1, Ch2, Ch3, Ch4] = [0, 0, player音, player音]
-        p2_stage2_4ch = [zeros(size(player_sound)), zeros(size(player_sound)), player_sound, player_sound]';
+        % Stage2用: Player2への刺激音 (出力3/4のみ - Player2だけが聞く)
+        % Player1がタップした時にPlayer2に聞こえる音 = Player1の音
+        % [Ch1, Ch2, Ch3, Ch4] = [0, 0, P1音, P1音]
+        p2_stage2_4ch = [zeros(size(player1_sound)), zeros(size(player1_sound)), player1_sound, player1_sound]';
         audio.player2_stage2_buffer = PsychPortAudio('CreateBuffer', audio.pahandle, p2_stage2_4ch);
 
         fprintf('音声バッファ作成完了:\n');
-        fprintf('  Stage1 Player1音(stim): 全チャンネル（両プレイヤーが聞く）\n');
-        fprintf('  Stage1 Player2音(player): 全チャンネル（両プレイヤーが聞く）\n');
-        fprintf('  Stage2 Player1音(stim): 出力1/2のみ\n');
-        fprintf('  Stage2 Player2音(player): 出力3/4のみ\n');
+        fprintf('  Stage1 Player1音: 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage1 Player2音: 全チャンネル（両プレイヤーが聞く）\n');
+        fprintf('  Stage2 Player1への刺激音(=P2音): 出力1/2のみ\n');
+        fprintf('  Stage2 Player2への刺激音(=P1音): 出力3/4のみ\n');
 
     catch ME
         fprintf('❌ PsychPortAudio初期化エラー: %s\n', ME.message);
@@ -466,12 +480,12 @@ function save_experiment_data(runner)
 
     fprintf('\n=== データ保存 ===\n');
 
-    % 保存ディレクトリ作成
+    % 保存ディレクトリ作成（2人の参加者ID使用）
     timestamp = datestr(runner.data.experiment_start_time, 'yyyymmdd_HHMMSS');
     date_str = datestr(runner.data.experiment_start_time, 'yyyymmdd');
 
     data_dir = fullfile(pwd, 'data', 'raw', date_str, ...
-        sprintf('%s_human_human_%s', runner.participant_id, timestamp));
+        sprintf('%s_%s_human_human_%s', runner.participant1_id, runner.participant2_id, timestamp));
 
     if ~exist(data_dir, 'dir')
         mkdir(data_dir);
@@ -480,8 +494,19 @@ function save_experiment_data(runner)
     % データ分析
     analyze_and_display_results(runner);
 
-    % MAT形式で保存
-    save(fullfile(data_dir, 'experiment_data.mat'), 'runner');
+    % MAT形式で保存（Figureオブジェクトを除外）
+    data_to_save = struct();
+    data_to_save.participant1_id = runner.participant1_id;
+    data_to_save.participant2_id = runner.participant2_id;
+    data_to_save.stage1_beats = runner.stage1_beats;
+    data_to_save.stage2_cycles = runner.stage2_cycles;
+    data_to_save.target_interval = runner.target_interval;
+    data_to_save.clock_start = runner.clock_start;
+    data_to_save.data = runner.data;
+    data_to_save.audio_info = struct();
+    data_to_save.audio_info.fs = runner.audio.fs;
+
+    save(fullfile(data_dir, 'experiment_data.mat'), 'data_to_save');
 
     % CSV形式でStage1データ保存
     if ~isempty(runner.data.stage1_metro_times)
