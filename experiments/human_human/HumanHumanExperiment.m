@@ -51,21 +51,56 @@ classdef HumanHumanExperiment < BaseExperiment
         end
 
         function get_participant_info(obj)
-            % 参加者情報入力
+            % 参加者情報入力（ID検証機能付き）
 
             fprintf('\n=== 参加者情報入力 ===\n');
-            obj.participant1_id = input('参加者1 ID (例: P001): ', 's');
-            if isempty(obj.participant1_id)
-                obj.participant1_id = 'P1_anonymous';
+            fprintf('ID形式: P + 3桁の数字（例: P001）\n');
+            fprintf('空欄の場合: 匿名ID（P1_anonymous/P2_anonymous）\n\n');
+
+            % ID形式検証関数（P + 3桁の数字）
+            validate_id = @(id) ~isempty(regexp(id, '^P\d{3}$', 'once'));
+
+            % 参加者1 ID入力
+            while true
+                obj.participant1_id = input('参加者1 ID (例: P001): ', 's');
+                if isempty(obj.participant1_id)
+                    obj.participant1_id = 'P1_anonymous';
+                    break;
+                elseif validate_id(obj.participant1_id)
+                    break;
+                else
+                    fprintf('❌ ID形式が不正です。P + 3桁の数字で入力してください（例: P001）\n');
+                end
             end
 
-            obj.participant2_id = input('参加者2 ID (例: P002): ', 's');
-            if isempty(obj.participant2_id)
-                obj.participant2_id = 'P2_anonymous';
+            % 参加者2 ID入力
+            while true
+                obj.participant2_id = input('参加者2 ID (例: P002): ', 's');
+                if isempty(obj.participant2_id)
+                    obj.participant2_id = 'P2_anonymous';
+                    break;
+                elseif validate_id(obj.participant2_id)
+                    % 重複チェック
+                    if strcmp(obj.participant2_id, obj.participant1_id)
+                        fprintf('❌ 参加者1と同じIDです。異なるIDを入力してください。\n');
+                        continue;
+                    end
+                    break;
+                else
+                    fprintf('❌ ID形式が不正です。P + 3桁の数字で入力してください（例: P002）\n');
+                end
             end
 
+            % 確認
+            fprintf('\n=== 入力内容の確認 ===\n');
             fprintf('参加者1: %s (出力1/2, Sキー)\n', obj.participant1_id);
             fprintf('参加者2: %s (出力3/4, Cキー)\n', obj.participant2_id);
+            fprintf('\n');
+            confirm = input('この内容でよろしいですか？ (y/n): ', 's');
+            if ~strcmpi(confirm, 'y')
+                fprintf('\nやり直します...\n');
+                obj.get_participant_info();  % 再帰呼び出し
+            end
         end
 
         function prepare_audio_buffers(obj)
@@ -101,17 +136,17 @@ classdef HumanHumanExperiment < BaseExperiment
             % 親クラスのハンドラ呼び出し
             key_press_handler@BaseExperiment(obj, src, event);
 
-            % プレイヤーキー処理
+            % プレイヤーキー処理（大文字小文字両対応）
             current_time = obj.timer.get_current_time();
 
-            switch event.Key
+            switch lower(event.Key)  % 大文字小文字を区別しない
                 case 's'
-                    if current_time - obj.player1_last_press_time > 0.05  % デバウンス
+                    if current_time - obj.player1_last_press_time > 0.05  % デバウンス50ms
                         obj.player1_key_pressed = true;
                         obj.player1_last_press_time = current_time;
                     end
                 case 'c'
-                    if current_time - obj.player2_last_press_time > 0.05
+                    if current_time - obj.player2_last_press_time > 0.05  % デバウンス50ms
                         obj.player2_key_pressed = true;
                         obj.player2_last_press_time = current_time;
                     end
@@ -121,7 +156,7 @@ classdef HumanHumanExperiment < BaseExperiment
         function key_release_handler(obj, ~, event)
             % キーリリースハンドラ（オーバーライド）
 
-            switch event.Key
+            switch lower(event.Key)  % 大文字小文字を区別しない
                 case 's'
                     obj.player1_key_pressed = false;
                 case 'c'
