@@ -287,37 +287,5 @@ classdef HumanHumanExperiment < BaseExperiment
 
             fprintf('Stage2完了: %dサイクル\n', cycle_count);
         end
-
-        function display_results(obj)
-            % 結果表示（オーバーライド）
-
-            fprintf('\n========================================\n');
-            fprintf('           実験結果\n');
-            fprintf('========================================\n');
-
-            fprintf('参加者1: %s\n', obj.participant1_id);
-            fprintf('参加者2: %s\n', obj.participant2_id);
-
-            % Stage1結果
-            fprintf('\n--- Stage 1 ---\n');
-            fprintf('メトロノーム音: %d回\n', length(obj.recorder.data.stage1_data));
-
-            % Stage2結果
-            fprintf('\n--- Stage 2 ---\n');
-            fprintf('総タップ数: %d回\n', length(obj.recorder.data.stage2_data));
-
-            if ~isempty(obj.recorder.data.stage2_data)
-                % 簡易統計
-                taps = obj.recorder.data.stage2_data;
-                timestamps = [taps.timestamp];
-
-                if length(timestamps) > 1
-                    intervals = diff(timestamps);
-                    fprintf('平均間隔: %.3f秒 (SD=%.3f)\n', mean(intervals), std(intervals));
-                end
-            end
-
-            obj.update_display('実験完了！ありがとうございました', 'color', [0.2, 1.0, 0.2]);
-        end
     end
 end
