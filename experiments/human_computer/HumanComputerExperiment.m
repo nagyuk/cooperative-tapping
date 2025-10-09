@@ -134,7 +134,9 @@ classdef HumanComputerExperiment < BaseExperiment
 
             fprintf('✅ オーディオバッファ作成完了\n');
 
-            % 初回再生遅延対策: ダミー音声で事前ウォームアップ
+            % ★重要★ 初回再生遅延対策: ダミー音声で事前ウォームアップ
+            % この処理により、Stage1 turn1の最初の2音が正確な1秒間隔になります。
+            % 詳細: docs/audio_warmup_necessity.md 参照
             fprintf('INFO: オーディオハードウェアウォームアップ中...\n');
             obj.audio.warmup_audio();
             fprintf('✅ オーディオウォームアップ完了\n');

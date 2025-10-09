@@ -184,7 +184,28 @@ classdef AudioSystem < handle
 
         function warmup_audio(obj)
             % オーディオハードウェアウォームアップ
-            % 初回再生遅延を防ぐため、無音を事前再生してハードウェアを初期化
+            %
+            % ★重要★ この処理は必須です。削除しないでください。
+            %
+            % 目的:
+            %   PsychPortAudioの初回Start呼び出し時に発生する200-300msの
+            %   ハードウェア初期化遅延を回避するため、実験開始前に
+            %   ダミー音声を再生してハードウェアを事前起動します。
+            %
+            % 問題:
+            %   初回再生時、以下の処理が発生し遅延します：
+            %   - オーディオデバイスのスリープ解除
+            %   - DMAバッファの初期化
+            %   - デバイスドライバの準備
+            %
+            % 影響:
+            %   Stage1 turn1の最初の2音間隔が数百ms短く聞こえる
+            %   （記録時刻は正確だが、実際の音は遅延する）
+            %
+            % 解決策:
+            %   実験開始前に無音を再生し、ハードウェアを起動状態にする
+            %
+            % 詳細: docs/audio_warmup_necessity.md 参照
 
             if ~obj.is_initialized
                 error('AudioSystem:NotInitialized', 'AudioSystemが初期化されていません');
@@ -198,13 +219,14 @@ classdef AudioSystem < handle
             silence_buffer = obj.create_buffer(silence, ones(1, obj.num_channels));
 
             % 無音を再生（wait=1で完了まで待機）
+            % wait=1が重要: ハードウェア起動完了を確実にする
             PsychPortAudio('FillBuffer', obj.pahandle, silence_buffer);
             PsychPortAudio('Start', obj.pahandle, 1, 0, 1);
 
             % バッファ削除
             PsychPortAudio('DeleteBuffer', silence_buffer);
 
-            % 短い待機でハードウェアの安定化
+            % 短い待機でハードウェアの安定化（DACの電圧安定化など）
             pause(0.05);
         end
 
