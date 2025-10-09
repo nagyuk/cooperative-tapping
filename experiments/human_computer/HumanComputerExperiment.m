@@ -133,6 +133,11 @@ classdef HumanComputerExperiment < BaseExperiment
             obj.player_buffer = obj.audio.create_buffer(player_sound, [1,1,0,0]);
 
             fprintf('✅ オーディオバッファ作成完了\n');
+
+            % 初回再生遅延対策: ダミー音声で事前ウォームアップ
+            fprintf('INFO: オーディオハードウェアウォームアップ中...\n');
+            obj.audio.warmup_audio();
+            fprintf('✅ オーディオウォームアップ完了\n');
         end
 
         function display_results(obj)

@@ -182,6 +182,32 @@ classdef AudioSystem < handle
             PsychPortAudio('Start', obj.pahandle, 1, 0, wait);
         end
 
+        function warmup_audio(obj)
+            % オーディオハードウェアウォームアップ
+            % 初回再生遅延を防ぐため、無音を事前再生してハードウェアを初期化
+
+            if ~obj.is_initialized
+                error('AudioSystem:NotInitialized', 'AudioSystemが初期化されていません');
+            end
+
+            % 極短い無音データ作成（0.01秒 = 221サンプル @ 22050Hz）
+            silent_samples = round(obj.fs * 0.01);
+            silence = zeros(silent_samples, 1);
+
+            % 全チャンネルに無音を割り当て
+            silence_buffer = obj.create_buffer(silence, ones(1, obj.num_channels));
+
+            % 無音を再生（wait=1で完了まで待機）
+            PsychPortAudio('FillBuffer', obj.pahandle, silence_buffer);
+            PsychPortAudio('Start', obj.pahandle, 1, 0, 1);
+
+            % バッファ削除
+            PsychPortAudio('DeleteBuffer', silence_buffer);
+
+            % 短い待機でハードウェアの安定化
+            pause(0.05);
+        end
+
         function close(obj)
             % PsychPortAudioクリーンアップ
 
