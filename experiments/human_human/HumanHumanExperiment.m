@@ -24,12 +24,27 @@ classdef HumanHumanExperiment < BaseExperiment
     end
 
     methods (Access = public)
-        function obj = HumanHumanExperiment()
+        function obj = HumanHumanExperiment(varargin)
             % HumanHumanExperiment コンストラクタ
+            %
+            % Parameters (optional):
+            %   config - ExperimentConfigインスタンス または 設定タイプ文字列
+            %            ('default', 'pilot', 'main', 'custom')
+            %
+            % Usage:
+            %   exp = HumanHumanExperiment();           % デフォルト設定
+            %   exp = HumanHumanExperiment('pilot');    % パイロット実験用
+            %   exp = HumanHumanExperiment(config);     % カスタム設定
 
-            obj@BaseExperiment();
+            % 親クラスのコンストラクタ（設定を渡す）
+            obj@BaseExperiment(varargin{:});
 
             fprintf('人間-人間協調タッピング実験\n');
+
+            % 設定を表示
+            if obj.config.DEBUG_TIMING
+                obj.config.display_config();
+            end
 
             % 参加者情報入力
             obj.get_participant_info();

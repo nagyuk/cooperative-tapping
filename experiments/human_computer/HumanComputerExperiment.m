@@ -24,14 +24,28 @@ classdef HumanComputerExperiment < BaseExperiment
     end
 
     methods (Access = public)
-        function obj = HumanComputerExperiment()
+        function obj = HumanComputerExperiment(varargin)
             % HumanComputerExperiment コンストラクタ
+            %
+            % Parameters (optional):
+            %   config - ExperimentConfigインスタンス または 設定タイプ文字列
+            %
+            % Usage:
+            %   exp = HumanComputerExperiment();           % デフォルト設定
+            %   exp = HumanComputerExperiment('pilot');    % パイロット実験用
+            %   exp = HumanComputerExperiment(config);     % カスタム設定
 
-            obj@BaseExperiment();
+            % 親クラスのコンストラクタ（設定を渡す）
+            obj@BaseExperiment(varargin{:});
 
             fprintf('人間-コンピュータ協調タッピング実験\n');
 
-            % 実験設定読み込み
+            % 設定を表示
+            if obj.config.DEBUG_MODEL || obj.config.DEBUG_TIMING
+                obj.config.display_config();
+            end
+
+            % 実験設定読み込み（後方互換性のため残す）
             obj.load_experiment_config();
 
             % モデル選択と参加者情報入力

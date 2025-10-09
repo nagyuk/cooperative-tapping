@@ -10,11 +10,12 @@ classdef (Abstract) BaseExperiment < handle
         audio          % AudioSystemインスタンス
         timer          % TimingControllerインスタンス
         recorder       % DataRecorderインスタンス
+        config         % ExperimentConfigインスタンス
 
-        % 実験パラメータ
-        stage1_beats = 10
-        stage2_cycles = 20
-        target_interval = 1.0  % 目標間隔（秒）
+        % 実験パラメータ（configから取得、下位互換性のため残す）
+        stage1_beats
+        stage2_cycles
+        target_interval
 
         % UI要素
         input_fig      % 入力ウィンドウFigure
@@ -37,9 +38,12 @@ classdef (Abstract) BaseExperiment < handle
     end
 
     methods (Access = public)
-        function obj = BaseExperiment()
+        function obj = BaseExperiment(varargin)
             % BaseExperiment コンストラクタ
             % 共通システムを初期化
+            %
+            % Parameters (optional):
+            %   config - ExperimentConfigインスタンス または 設定タイプ文字列
 
             % PsychToolboxパス追加
             if exist('Psychtoolbox', 'dir')
@@ -47,6 +51,23 @@ classdef (Abstract) BaseExperiment < handle
             end
 
             fprintf('=== 協調タッピング実験システム ===\n');
+
+            % 設定の初期化
+            if nargin >= 1 && isa(varargin{1}, 'ExperimentConfig')
+                % ExperimentConfigインスタンスが渡された場合
+                obj.config = varargin{1};
+            elseif nargin >= 1 && ischar(varargin{1})
+                % 設定タイプ文字列が渡された場合
+                obj.config = ExperimentConfig(varargin{1});
+            else
+                % デフォルト設定
+                obj.config = ExperimentConfig('default');
+            end
+
+            % configから実験パラメータをコピー（下位互換性）
+            obj.stage1_beats = obj.config.stage1_beats;
+            obj.stage2_cycles = obj.config.stage2_cycles;
+            obj.target_interval = obj.config.target_interval;
         end
 
         function success = execute(obj)
