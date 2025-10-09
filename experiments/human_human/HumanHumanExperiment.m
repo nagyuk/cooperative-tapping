@@ -37,7 +37,16 @@ classdef HumanHumanExperiment < BaseExperiment
             % DataRecorder初期化
             obj.recorder = DataRecorder('human_human', {obj.participant1_id, obj.participant2_id});
 
-            % オーディオバッファ準備
+            % 注意: オーディオバッファ準備はinitialize_systems()で行う
+        end
+
+        function initialize_systems(obj)
+            % システム初期化（オーバーライド）
+
+            % 親クラスの初期化を呼ぶ（audio, timer, input_windowを作成）
+            initialize_systems@BaseExperiment(obj);
+
+            % オーディオバッファ準備（audioが初期化された後）
             obj.prepare_audio_buffers();
         end
 
@@ -77,10 +86,15 @@ classdef HumanHumanExperiment < BaseExperiment
             fprintf('✅ オーディオバッファ作成完了\n');
             fprintf('   Stage1: 両プレイヤーが両方の音を聞く\n');
             fprintf('   Stage2: Player1→P2音, Player2→P1音\n');
-        end
-    end
 
-    methods (Access = protected)
+            % ★重要★ 初回再生遅延対策: ダミー音声で事前ウォームアップ
+            % この処理により、Stage1 turn1の最初の2音が正確な1秒間隔になります。
+            % 詳細: docs/audio_warmup_necessity.md 参照
+            fprintf('INFO: オーディオハードウェアウォームアップ中...\n');
+            obj.audio.warmup_audio();
+            fprintf('✅ オーディオウォームアップ完了\n');
+        end
+
         function key_press_handler(obj, src, event)
             % キー押下ハンドラ（オーバーライド）
 
@@ -126,20 +140,52 @@ classdef HumanHumanExperiment < BaseExperiment
                 'スペースキーで開始'}, 'color', [0.2, 1.0, 0.2]);
 
             obj.wait_for_space();
+
+            % タイマー開始（元の実装準拠: wait_for_space直後）
+            obj.timer.start();
         end
 
+        function display_results(obj)
+            % 結果表示（オーバーライド）
+
+            fprintf('\n========================================\n');
+            fprintf('           実験結果\n');
+            fprintf('========================================\n');
+
+            fprintf('参加者1: %s\n', obj.participant1_id);
+            fprintf('参加者2: %s\n', obj.participant2_id);
+
+            % Stage1結果
+            fprintf('\n--- Stage 1 ---\n');
+            fprintf('メトロノーム音: %d回\n', length(obj.recorder.data.stage1_data));
+
+            % Stage2結果
+            fprintf('\n--- Stage 2 ---\n');
+            fprintf('総タップ数: %d回\n', length(obj.recorder.data.stage2_data));
+
+            if ~isempty(obj.recorder.data.stage2_data)
+                % 簡易統計
+                taps = obj.recorder.data.stage2_data;
+                timestamps = [taps.timestamp];
+
+                if length(timestamps) > 1
+                    intervals = diff(timestamps);
+                    fprintf('平均間隔: %.3f秒 (SD=%.3f)\n', mean(intervals), std(intervals));
+                end
+            end
+
+            obj.update_display('実験完了！ありがとうございました', 'color', [0.2, 1.0, 0.2]);
+        end
+    end
+
+    methods (Access = protected)
         function run_stage1(obj)
             % Stage1: メトロノームフェーズ
-
-            obj.update_display('Stage 1: メトロノームフェーズ', 'color', [1.0, 0.8, 0.3]);
-            pause(1);
-
-            % タイミングスタート
-            obj.timer.start();
+            % 注意: timerは既にdisplay_instructions()で開始済み
 
             % メトロノームスケジュール作成（0.5秒オフセット、1.0秒間隔）
             total_sounds = obj.stage1_beats * 2;
-            schedule = obj.timer.create_schedule(0.5, 0.5, total_sounds);
+            schedule = obj.timer.create_schedule(0.5, 1.0, total_sounds);
 
             fprintf('Stage1開始: %d音再生\n', total_sounds);
 
@@ -151,21 +197,25 @@ classdef HumanHumanExperiment < BaseExperiment
                 % 目標時刻まで待機
                 obj.timer.wait_until(schedule(i), @() obj.escape_pressed);
 
-                % 音声再生
-                actual_time = obj.timer.record_event();
-
                 if mod(i, 2) == 1
-                    % Player1音
-                    obj.audio.play_buffer(obj.player1_stage1_buffer, false);
-                    fprintf('[%d/%d] Player1音 %.3fs\n', ceil(i/2), obj.stage1_beats, actual_time);
-                else
-                    % Player2音
-                    obj.audio.play_buffer(obj.player2_stage1_buffer, false);
-                    fprintf('       Player2音 %.3fs\n', actual_time);
-                end
+                    % Player1音（元の実装準拠: 再生直前に時刻記録）
+                    actual_time = obj.timer.record_event();
+                    obj.audio.play_buffer(obj.player1_stage1_buffer, 0);
 
-                % データ記録
-                obj.recorder.record_stage1_event(actual_time, 'sound_type', mod(i,2)+1);
+                    fprintf('[%d/%d] Player1音 %.3fs\n', ceil(i/2), obj.stage1_beats, actual_time);
+
+                    % データ記録
+                    obj.recorder.record_stage1_event(actual_time, 'sound_type', 1, 'player', 1);
+                else
+                    % Player2音（元の実装準拠: 再生直前に時刻記録）
+                    actual_time = obj.timer.record_event();
+                    obj.audio.play_buffer(obj.player2_stage1_buffer, 0);
+
+                    fprintf('       Player2音 %.3fs\n', actual_time);
+
+                    % データ記録
+                    obj.recorder.record_stage1_event(actual_time, 'sound_type', 2, 'player', 2);
+                end
             end
 
             fprintf('Stage1完了\n');
