@@ -207,6 +207,9 @@ classdef HumanComputerExperiment < BaseExperiment
                 'スペースキーで開始'}, 'color', [0.2, 1.0, 0.2]);
 
             obj.wait_for_space();
+
+            % タイマー開始（元の実装準拠: wait_for_space直後）
+            obj.timer.start();
         end
     end
 
@@ -214,9 +217,7 @@ classdef HumanComputerExperiment < BaseExperiment
         function run_stage1(obj)
             % Stage1: 完全周期メトロノームフェーズ
             % 刺激音とプレイヤー音を1.0秒間隔で交互に自動再生（キー入力なし）
-
-            % タイミングスタート
-            obj.timer.start();
+            % 注意: timerは既にdisplay_instructions()で開始済み
 
             % 音数の計算（刺激音とプレイヤー音が交互）
             % stage1_beats回のサイクル = beats*2回の音
